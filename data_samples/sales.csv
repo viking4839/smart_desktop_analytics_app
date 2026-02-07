@@ -1,0 +1,11 @@
+order_id,product_id,date,revenue,customer_id,quantity,category
+1,101,2025-01-01,100.50,5001,2,Electronics
+2,102,2025-01-01,75.25,5002,1,Accessories
+3,101,2025-01-02,150.75,5003,3,Electronics
+4,103,2025-01-02,200.00,5004,1,Electronics
+5,102,2025-01-03,225.75,5005,3,Accessories
+6,104,2025-01-03,99.99,5006,1,Accessories
+7,101,2025-01-04,50.25,5007,1,Electronics
+8,103,2025-01-04,400.00,5008,2,Electronics
+9,105,2025-01-05,150.00,5009,1,Furniture
+10,102,2025-01-05,75.25,5010,1,Accessories

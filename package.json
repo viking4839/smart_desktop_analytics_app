@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.1",
+    "antd": "^6.2.3",
+    "lucide-react": "^0.563.0"
+  },
+  "devDependencies": {
+    "@types/antd": "^0.12.32"
+  }
+}

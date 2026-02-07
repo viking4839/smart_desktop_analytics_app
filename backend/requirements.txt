@@ -1,0 +1,23 @@
+# Core data processing
+pandas==2.2.0        # Data manipulation - industry standard for tabular data
+numpy==1.26.4        # Numerical operations - pandas depends on it
+
+# Data validation and models
+pydantic==2.6.1      # Data validation with Type hints - modern alternative to dataclasses
+pydantic-settings==2.2.1  # For configuration management
+
+# File handling
+openpyxl==3.1.2      # Excel file support - lightweight and reliable
+python-magic==0.4.27 # File type detection - better than file extensions
+
+# Development tools
+black==24.1.1        # Code formatter - consistent code style
+isort==5.13.2        # Import sorter - clean imports
+pylint==3.1.0        # Code linter - catch errors early
+mypy==1.8.0          # Type checker - static typing for Python
+
+# Testing
+pytest==7.4.4        # Testing framework - simple and powerful
+pytest-asyncio==0.23.5 # Async testing support
+
+# Note: We DON'T include scikit-learn, tensorflow, nltp - keeping to MVP boundaries
