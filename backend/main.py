@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 import signal
+import pandas as pd
+import numpy as np
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -19,7 +21,6 @@ from core.registry import DataRegistry
 from data_io.ingestor import DataIngestor
 
 # Configure logging
-# Configure logging (Force UTF-8 for file, safe defaults for stream)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -34,12 +35,6 @@ logger = logging.getLogger(__name__)
 class AnalyticsBackend:
     """
     Main backend application with proper async support and resource management.
-    
-    Key improvements:
-    - Proper async/await throughout
-    - Resource cleanup
-    - Health monitoring
-    - Graceful shutdown
     """
     
     def __init__(self):
@@ -69,6 +64,9 @@ class AnalyticsBackend:
             'execute_query': self.cmd_execute_query,
             'remove_dataset': self.cmd_remove_dataset,
             'get_cache_stats': self.cmd_get_cache_stats,
+            'analyze_dataset': self.cmd_analyze_dataset,          # Added
+            'check_data_quality': self.cmd_check_data_quality,    # Added
+            'filter_dataset': self.cmd_filter_dataset,           # Added
         }
         
         for command, handler in handlers.items():
@@ -77,12 +75,7 @@ class AnalyticsBackend:
     # ========== Command Handlers ==========
     
     async def cmd_ping(self) -> Dict[str, Any]:
-        """
-        Health check endpoint.
-        
-        Returns:
-            Status information
-        """
+        """Health check endpoint."""
         return {
             "status": "healthy",
             "version": "1.0.0",
@@ -91,12 +84,7 @@ class AnalyticsBackend:
         }
     
     async def cmd_list_datasets(self) -> Dict[str, Any]:
-        """
-        List all registered datasets.
-        
-        Returns:
-            List of dataset metadata
-        """
+        """List all registered datasets."""
         datasets = self.registry.list_datasets()
         return {
             "datasets": datasets,
@@ -104,30 +92,12 @@ class AnalyticsBackend:
         }
     
     async def cmd_register_dataset(self, file_path: str) -> Dict[str, Any]:
-        """
-        Register a new dataset from file.
-        
-        Args:
-            file_path: Path to data file
-        
-        Returns:
-            Dataset metadata and validation results
-        
-        Raises:
-            FileNotFoundError: If file doesn't exist
-            ValueError: If file is invalid
-        """
-        # Validate input
+        """Register a new dataset from file."""
         if not file_path or not isinstance(file_path, str):
             raise ValueError("file_path must be a non-empty string")
         
-        # Sanitize path to prevent traversal attacks
         file_path = self._sanitize_path(file_path)
-        
-        # Register dataset (uses thread-safe registry)
         dataset = await self.registry.register_dataset(file_path, self.ingestor)
-        
-        # Validate data quality
         validation = self.ingestor.validate_dataframe(dataset.dataframe)
         
         return {
@@ -136,18 +106,7 @@ class AnalyticsBackend:
         }
     
     async def cmd_get_dataset(self, dataset_id: str) -> Dict[str, Any]:
-        """
-        Get dataset metadata.
-        
-        Args:
-            dataset_id: Dataset identifier
-        
-        Returns:
-            Dataset metadata
-        
-        Raises:
-            ValueError: If dataset not found
-        """
+        """Get dataset metadata."""
         if not dataset_id:
             raise ValueError("dataset_id is required")
         
@@ -158,32 +117,18 @@ class AnalyticsBackend:
         return dataset.to_dict()
     
     async def cmd_preview_dataset(self, dataset_id: str, limit: int = 10) -> Dict[str, Any]:
-        """
-        Get dataset preview (first N rows).
-        
-        Args:
-            dataset_id: Dataset identifier
-            limit: Number of rows to return (default: 10, max: 100)
-        
-        Returns:
-            Dataset preview with columns and rows
-        
-        Raises:
-            ValueError: If dataset not found or invalid limit
-        """
+        """Get dataset preview (first N rows)."""
         if not dataset_id:
             raise ValueError("dataset_id is required")
         
-        # Validate and clamp limit
         if not isinstance(limit, int) or limit < 1:
             raise ValueError("limit must be a positive integer")
-        limit = min(limit, 100)  # Maximum 100 rows
+        limit = min(limit, 100)
         
         dataset = self.registry.get_dataset(dataset_id)
         if not dataset:
             raise ValueError(f"Dataset not found: {dataset_id}")
         
-        # Get preview (creates a copy - safe for concurrent access)
         df_preview = dataset.get_dataframe_copy().head(limit)
         
         return {
@@ -205,7 +150,6 @@ class AnalyticsBackend:
         if not dataset:
             raise ValueError(f"Dataset not found: {dataset_id}")
         
-        # ⭐ NEW: Generate auto-suggestions
         from analysis.suggestions import AnalysisSuggestions
         suggestions = AnalysisSuggestions.generate_suggestions(dataset)
         insights = AnalysisSuggestions.get_quick_insights(dataset)
@@ -214,9 +158,9 @@ class AnalyticsBackend:
             "dataset_id": dataset_id,
             "dataset_name": dataset.name,
             "schema": {name: col.to_dict() for name, col in dataset.schema.items()},
-            "suggested_queries": suggestions,  # ⭐ NEW
-            "quick_insights": insights,        # ⭐ NEW
-            "quality_score": self._calculate_dataset_quality(dataset)  # ⭐ NEW
+            "suggested_queries": suggestions,
+            "quick_insights": insights,
+            "quality_score": self._calculate_dataset_quality(dataset)
         }
 
     def _calculate_dataset_quality(self, dataset) -> Dict[str, Any]:
@@ -244,35 +188,24 @@ class AnalyticsBackend:
             "null_percentage": round(null_percentage, 1)
         }
     
- # File: backend/main.py
-# Line: ~251
-
     async def cmd_execute_query(self, query_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a query on a dataset."""
         if not query_dict:
             raise ValueError("query_dict is required")
-    
+        
         query = Query.from_dict(query_dict)
-    
+        
         from execution.engine import AnalyticsEngine
         engine = AnalyticsEngine(self.registry)
         result = await engine.execute(query)
-    
-        # FIX: Handle both dict and QueryResult
+        
         if isinstance(result, dict):
-            return result  # Already a dict
+            return result
         else:
-            return result.to_dict()  # QueryResult object
+            return result.to_dict()
     
     async def cmd_remove_dataset(self, dataset_id: str) -> Dict[str, Any]:
-        """
-        Remove a dataset from registry.
-        
-        Args:
-            dataset_id: Dataset identifier
-        
-        Returns:
-            Success status
-        """
+        """Remove a dataset from registry."""
         if not dataset_id:
             raise ValueError("dataset_id is required")
         
@@ -284,39 +217,284 @@ class AnalyticsBackend:
         }
     
     async def cmd_get_cache_stats(self) -> Dict[str, Any]:
-        """
-        Get cache statistics.
-        
-        Returns:
-            Cache metrics
-        """
+        """Get cache statistics."""
         return self.registry.get_cache_stats()
+    
+    async def cmd_analyze_dataset(self, dataset_id: str, analysis_type: str, column: str = None):
+        """
+        Analyze dataset with various methods.
+        
+        analysis_type options: 
+        - 'distribution': Column distribution analysis
+        - 'summary_stats': Summary statistics
+        - 'outliers': Find outliers
+        - 'date_analysis': Date-specific analysis
+        - 'duplicates': Find duplicate rows
+        """
+        dataset = self.registry.get_dataset(dataset_id)
+        if not dataset:
+            raise ValueError(f"Dataset not found: {dataset_id}")
+        
+        df = dataset.get_dataframe_copy()
+        
+        if analysis_type == 'distribution' and column:
+            if column not in df.columns:
+                raise ValueError(f"Column {column} not found in dataset")
+            
+            col_data = df[column]
+            
+            if pd.api.types.is_numeric_dtype(col_data):
+                stats = {
+                    'min': float(col_data.min()),
+                    'max': float(col_data.max()),
+                    'mean': float(col_data.mean()),
+                    'median': float(col_data.median()),
+                    'std': float(col_data.std()),
+                    'q25': float(col_data.quantile(0.25)),
+                    'q75': float(col_data.quantile(0.75))
+                }
+                
+                if len(col_data) > 0:
+                    hist, bin_edges = np.histogram(col_data.dropna(), bins=10)
+                    buckets = []
+                    for i in range(len(hist)):
+                        buckets.append({
+                            'range': f"{bin_edges[i]:.2f}-{bin_edges[i+1]:.2f}",
+                            'count': int(hist[i]),
+                            'percentage': round(hist[i] / len(col_data) * 100, 1)
+                        })
+                    
+                    return {
+                        'type': 'distribution',
+                        'title': f'Distribution of {column}',
+                        'data': {
+                            'statistics': stats,
+                            'buckets': buckets,
+                            'total': len(col_data),
+                            'missing': int(col_data.isnull().sum())
+                        },
+                        'insights': [
+                            f"Column '{column}' has {len(col_data.dropna().unique())} unique values",
+                            f"Missing values: {col_data.isnull().sum()} ({col_data.isnull().mean()*100:.1f}%)"
+                        ],
+                        'recommendations': [
+                            "Consider removing or imputing missing values if they affect analysis",
+                            "Check for outliers that might skew the distribution"
+                        ]
+                    }
+        
+        elif analysis_type == 'summary_stats':
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+            
+            summary = {
+                'total_rows': len(df),
+                'total_columns': len(df.columns),
+                'numeric_columns': len(numeric_cols),
+                'categorical_columns': len(categorical_cols),
+                'total_cells': len(df) * len(df.columns),
+                'missing_cells': int(df.isnull().sum().sum()),
+                'missing_percentage': round(df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100, 1)
+            }
+            
+            return {
+                'type': 'summary',
+                'title': 'Dataset Summary Statistics',
+                'data': summary,
+                'insights': [
+                    f"Dataset has {summary['total_rows']} rows and {summary['total_columns']} columns",
+                    f"Missing data: {summary['missing_percentage']}% of cells"
+                ],
+                'recommendations': [
+                    f"Consider handling missing values in {df.isnull().sum()[df.isnull().sum() > 0].count()} columns",
+                    "Review categorical columns for consistency"
+                ]
+            }
+        
+        elif analysis_type == 'outliers' and column:
+            if column not in df.columns or not pd.api.types.is_numeric_dtype(df[column]):
+                raise ValueError(f"Column {column} is not numeric or not found")
+            
+            Q1 = df[column].quantile(0.25)
+            Q3 = df[column].quantile(0.75)
+            IQR = Q3 - Q1
+            
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            
+            outliers = df[(df[column] < lower_bound) | (df[column] > upper_bound)]
+            
+            return {
+                'type': 'outliers',
+                'title': f'Outliers in {column}',
+                'data': {
+                    'lower_bound': float(lower_bound),
+                    'upper_bound': float(upper_bound),
+                    'outlier_count': len(outliers),
+                    'outlier_percentage': round(len(outliers) / len(df) * 100, 2),
+                    'sample_outliers': outliers.head(10)[column].tolist()
+                },
+                'insights': [
+                    f"Found {len(outliers)} outliers ({len(outliers)/len(df)*100:.1f}%)",
+                    f"Range: {lower_bound:.2f} to {upper_bound:.2f}"
+                ],
+                'recommendations': [
+                    "Review outliers for data entry errors",
+                    "Consider removing outliers if they're not relevant to analysis"
+                ]
+            }
+        
+        elif analysis_type == 'duplicates':
+            duplicates = df[df.duplicated(keep='first')]
+            
+            return {
+                'type': 'duplicates',
+                'title': 'Duplicate Rows Analysis',
+                'data': {
+                    'duplicate_count': len(duplicates),
+                    'duplicate_percentage': round(len(duplicates) / len(df) * 100, 2),
+                    'sample_duplicates': duplicates.head(5).values.tolist()
+                },
+                'insights': [
+                    f"Found {len(duplicates)} duplicate rows ({len(duplicates)/len(df)*100:.1f}%)"
+                ],
+                'recommendations': [
+                    "Remove duplicate rows to ensure data integrity",
+                    "Check if duplicates are legitimate or data entry errors"
+                ]
+            }
+        
+        return {'error': f'Analysis type {analysis_type} not supported'}
+    
+    async def cmd_check_data_quality(self, dataset_id: str):
+        """Check dataset for quality issues."""
+        dataset = self.registry.get_dataset(dataset_id)
+        if not dataset:
+            raise ValueError(f"Dataset not found: {dataset_id}")
+        
+        df = dataset.get_dataframe_copy()
+        
+        issues = []
+        
+        # Check for missing values
+        missing_cols = df.columns[df.isnull().any()].tolist()
+        for col in missing_cols:
+            missing_count = df[col].isnull().sum()
+            missing_pct = missing_count / len(df) * 100
+            
+            severity = 'low' if missing_pct < 5 else 'medium' if missing_pct < 20 else 'high'
+            
+            issues.append({
+                'type': 'missing',
+                'column': col,
+                'count': int(missing_count),
+                'examples': [],
+                'severity': severity,
+                'recommendation': f'Consider imputing missing values or removing rows with >50% missing'
+            })
+        
+        # Check for duplicates
+        duplicate_count = df.duplicated().sum()
+        if duplicate_count > 0:
+            duplicate_pct = duplicate_count / len(df) * 100
+            severity = 'low' if duplicate_pct < 2 else 'medium' if duplicate_pct < 10 else 'high'
+            
+            issues.append({
+                'type': 'duplicate',
+                'column': 'All columns',
+                'count': int(duplicate_count),
+                'examples': df[df.duplicated()].head(3).values.tolist(),
+                'severity': severity,
+                'recommendation': 'Remove duplicate rows to maintain data integrity'
+            })
+        
+        # Check for inconsistent formats in string columns
+        string_cols = df.select_dtypes(include=['object']).columns
+        for col in string_cols:
+            unique_values = df[col].dropna().unique()
+            if len(unique_values) > 0 and len(unique_values) < 20:
+                lower_values = [str(v).lower() for v in unique_values]
+                if len(set(lower_values)) < len(unique_values):
+                    issues.append({
+                        'type': 'inconsistent',
+                        'column': col,
+                        'count': len(df) - len(df[col].dropna().str.lower().drop_duplicates()),
+                        'examples': [],
+                        'severity': 'medium',
+                        'recommendation': f'Standardize casing in column "{col}"'
+                    })
+        
+        # Calculate overall score
+        total_issues = len(issues)
+        severity_scores = {'high': 3, 'medium': 2, 'low': 1}
+        weighted_score = sum(severity_scores[issue['severity']] for issue in issues)
+        
+        max_possible_score = total_issues * 3
+        if max_possible_score > 0:
+            issue_score = (weighted_score / max_possible_score) * 50
+        else:
+            issue_score = 0
+        
+        completeness = (df.notnull().sum().sum() / (len(df) * len(df.columns))) * 50
+        overall_score = 100 - issue_score + completeness
+        overall_score = max(0, min(100, overall_score))
+        
+        return {
+            'overall_score': round(overall_score),
+            'issues': issues,
+            'summary': f"Found {total_issues} quality issues. Data quality score: {round(overall_score)}/100",
+            'row_count': len(df),
+            'clean_row_count': len(df.dropna().drop_duplicates())
+        }
+    
+    async def cmd_filter_dataset(self, dataset_id: str, filters: dict):
+        """Apply filters to dataset and return filtered preview."""
+        dataset = self.registry.get_dataset(dataset_id)
+        if not dataset:
+            raise ValueError(f"Dataset not found: {dataset_id}")
+        
+        df = dataset.get_dataframe_copy()
+        
+        # Apply filters
+        for key, value in filters.items():
+            if not value or value == '':
+                continue
+                
+            if key.endswith('_min'):
+                col = key.replace('_min', '')
+                if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
+                    df = df[df[col] >= float(value)]
+            elif key.endswith('_max'):
+                col = key.replace('_max', '')
+                if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
+                    df = df[df[col] <= float(value)]
+            elif key in df.columns:
+                df = df[df[key].astype(str).str.contains(str(value), case=False, na=False)]
+        
+        # Return filtered preview
+        preview_df = df.head(100)
+        
+        return {
+            'filtered_preview': {
+                'columns': preview_df.columns.tolist(),
+                'rows': preview_df.values.tolist(),
+                'types': {col: str(dtype) for col, dtype in preview_df.dtypes.items()}
+            },
+            'filtered_count': len(df),
+            'original_count': len(dataset.get_dataframe_copy())
+        }
     
     # ========== Helper Methods ==========
     
     def _sanitize_path(self, file_path: str) -> str:
-        """
-        Sanitize file path to prevent directory traversal attacks.
-        
-        Args:
-            file_path: User-provided file path
-        
-        Returns:
-            Sanitized absolute path
-        
-        Raises:
-            ValueError: If path is invalid or suspicious
-        """
+        """Sanitize file path to prevent directory traversal attacks."""
         try:
-            # Convert to absolute path
             path = Path(file_path).resolve()
-            
-            # Check for suspicious patterns
             path_str = str(path)
+            
             if '..' in path_str or path_str.startswith('/etc'):
                 raise ValueError("Invalid file path")
             
-            # Ensure file exists and is a regular file
             if not path.exists():
                 raise FileNotFoundError(f"File not found: {file_path}")
             
@@ -332,9 +510,7 @@ class AnalyticsBackend:
     async def start(self):
         """Start the backend server."""
         self.running = True
-        logger.info("Analytics Backend starting...")  # Removed emoji
-        
-        # Start IPC handler
+        logger.info("Analytics Backend starting...")
         await self.ipc.start()
     
     async def shutdown(self):
@@ -342,23 +518,15 @@ class AnalyticsBackend:
         if not self.running:
             return
         
-        logger.info("Shutting down Analytics Backend...") # Removed emoji
+        logger.info("Shutting down Analytics Backend...")
         self.running = False
-        
-        # Shutdown IPC handler
         await self.ipc.shutdown()
-        
-        # Clear cache and close connections
         self.registry.clear_all()
-        
-        logger.info("Analytics Backend shutdown complete") # Removed emoji
+        logger.info("Analytics Backend shutdown complete")
 
 
 async def main():
-    """
-    Main entry point.
-    """
-    # Create backend
+    """Main entry point."""
     backend = AnalyticsBackend()
     
     # Set up signal handlers (Unix only)
@@ -373,13 +541,11 @@ async def main():
             loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))
     
     try:
-        # Start backend
         await backend.start()
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
-        # On Windows, we can't print emojis to stderr easily, so keep it simple
         print(f"Critical failure: {e}", file=sys.stderr)
         sys.exit(1)
     finally:
@@ -389,7 +555,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n🛑 Backend stopped by user", file=sys.stderr)
+        print("\nBackend stopped by user", file=sys.stderr)
     except Exception as e:
-        print(f"💥 Critical failure: {e}", file=sys.stderr)
+        print(f"Critical failure: {e}", file=sys.stderr)
         sys.exit(1)
