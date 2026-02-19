@@ -64,13 +64,85 @@ class AnalyticsBackend:
             'execute_query': self.cmd_execute_query,
             'remove_dataset': self.cmd_remove_dataset,
             'get_cache_stats': self.cmd_get_cache_stats,
-            'analyze_dataset': self.cmd_analyze_dataset,          # Added
-            'check_data_quality': self.cmd_check_data_quality,    # Added
-            'filter_dataset': self.cmd_filter_dataset,           # Added
+            'analyze_dataset': self.cmd_analyze_dataset,          
+            'check_data_quality': self.cmd_check_data_quality,    
+            'filter_dataset': self.cmd_filter_dataset,   
+            'get_dataset_full': self.cmd_get_dataset_full,
         }
         
         for command, handler in handlers.items():
             self.ipc.register_handler(command, handler)
+    
+    # ========== Helper Methods ==========
+    
+    def _sanitize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert pandas DataFrame to JSON‑serializable format.
+        Handles Timestamps, NaN, Infinity, and categoricals.
+        """
+        df = df.copy()
+        
+        # Convert datetime columns to ISO strings
+        for col in df.select_dtypes(include=['datetime64', 'datetime', 'datetimetz']):
+            df[col] = df[col].dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Convert categorical to string (to avoid JSON issues)
+        for col in df.select_dtypes(include=['category']):
+            df[col] = df[col].astype(str)
+        
+        # Convert numpy numeric types to Python native types
+        # (done automatically when using to_dict(orient='records') with our custom converter)
+        
+        # Replace NaN, Inf, -Inf with None
+        df = df.replace([np.nan, np.inf, -np.inf], None)
+        
+        return df
+    
+    def _sanitize_path(self, file_path: str) -> str:
+        """Sanitize file path to prevent directory traversal attacks."""
+        try:
+            path = Path(file_path).resolve()
+            path_str = str(path)
+            
+            if '..' in path_str or path_str.startswith('/etc'):
+                raise ValueError("Invalid file path")
+            
+            if not path.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
+            
+            if not path.is_file():
+                raise ValueError(f"Not a file: {file_path}")
+            
+            return str(path)
+            
+        except Exception as e:
+            logger.warning(f"Path sanitization failed for '{file_path}': {e}")
+            raise ValueError(f"Invalid file path: {file_path}")
+    
+    def _calculate_dataset_quality(self, dataset) -> Dict[str, Any]:
+        """Calculate overall dataset quality metrics."""
+        total_cells = dataset.row_count * dataset.column_count
+        null_count = sum(
+            schema.statistics.null_count 
+            for schema in dataset.schema.values() 
+            if schema.statistics
+        )
+        
+        null_percentage = (null_count / total_cells * 100) if total_cells > 0 else 0
+        
+        score = 100
+        if null_percentage > 50:
+            score -= 40
+        elif null_percentage > 20:
+            score -= 20
+        elif null_percentage > 5:
+            score -= 10
+        
+        return {
+            "score": max(0, min(100, score)),
+            "completeness": round(100 - null_percentage, 1),
+            "null_percentage": round(null_percentage, 1)
+        }
     
     # ========== Command Handlers ==========
     
@@ -162,31 +234,6 @@ class AnalyticsBackend:
             "quick_insights": insights,
             "quality_score": self._calculate_dataset_quality(dataset)
         }
-
-    def _calculate_dataset_quality(self, dataset) -> Dict[str, Any]:
-        """Calculate overall dataset quality metrics."""
-        total_cells = dataset.row_count * dataset.column_count
-        null_count = sum(
-            schema.statistics.null_count 
-            for schema in dataset.schema.values() 
-            if schema.statistics
-        )
-        
-        null_percentage = (null_count / total_cells * 100) if total_cells > 0 else 0
-        
-        score = 100
-        if null_percentage > 50:
-            score -= 40
-        elif null_percentage > 20:
-            score -= 20
-        elif null_percentage > 5:
-            score -= 10
-        
-        return {
-            "score": max(0, min(100, score)),
-            "completeness": round(100 - null_percentage, 1),
-            "null_percentage": round(null_percentage, 1)
-        }
     
     async def cmd_execute_query(self, query_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a query on a dataset."""
@@ -219,6 +266,88 @@ class AnalyticsBackend:
     async def cmd_get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
         return self.registry.get_cache_stats()
+    
+    async def cmd_get_dataset_full(self, dataset_id: str, row_limit: int = 10000) -> Dict[str, Any]:
+        """
+        Fetch entire dataset (up to limit) with schema and stats.
+        Optimized for client-side virtual tables.
+        """
+        if not dataset_id:
+            raise ValueError("dataset_id is required")
+            
+        dataset = self.registry.get_dataset(dataset_id)
+        if not dataset:
+            raise ValueError(f"Dataset {dataset_id} not found")
+
+        # 1. Get Data
+        df = dataset.get_dataframe_copy()
+        total_rows = len(df)
+        
+        # Limit rows for safety (sending 1M rows via JSON will crash)
+        display_df = df.head(row_limit)
+        
+        # 2. Sanitize (CRITICAL: Fixes Timestamp/NaN errors)
+        display_df = self._sanitize_dataframe(display_df)
+        
+        # 3. Convert to Records (List of Dicts) for JSON
+        data = display_df.to_dict(orient="records")
+
+        # 4. Get Full Schema (using existing Dataset.schema)
+        schema = {}
+        for col_name, col_schema in dataset.schema.items():
+            # Only include columns that are actually in the preview
+            # (in case the schema has extra columns from earlier versions)
+            if col_name in display_df.columns:
+                schema[col_name] = col_schema.to_dict()
+
+        # 5. Pre-compute Basic Stats (vectorised, fast)
+        stats = {}
+        for col in display_df.columns:
+            try:
+                col_data = df[col]  # use full column data for stats
+                if pd.api.types.is_numeric_dtype(col_data):
+                    clean = col_data.dropna()
+                    if not clean.empty:
+                        stats[col] = {
+                            "min": float(clean.min()),
+                            "max": float(clean.max()),
+                            "mean": float(clean.mean()),
+                            "median": float(clean.median()),
+                            "q25": float(clean.quantile(0.25)),
+                            "q75": float(clean.quantile(0.75)),
+                            "std": float(clean.std()),
+                        }
+                elif pd.api.types.is_datetime64_any_dtype(col_data):
+                    clean = col_data.dropna()
+                    if not clean.empty:
+                        stats[col] = {
+                            "min": clean.min().strftime('%Y-%m-%d %H:%M:%S'),
+                            "max": clean.max().strftime('%Y-%m-%d %H:%M:%S'),
+                            "unique_count": int(clean.nunique()),
+                        }
+                else:
+                    # Categorical / text
+                    clean = col_data.dropna()
+                    if not clean.empty:
+                        top = clean.value_counts().head(10).to_dict()
+                        stats[col] = {
+                            "unique_count": int(clean.nunique()),
+                            "top_categories": {str(k): int(v) for k, v in top.items()},
+                        }
+            except Exception as e:
+                logger.warning(f"Failed to compute stats for {col}: {e}")
+                stats[col] = {}
+
+        return {
+            "dataset_id": dataset.id,
+            "name": dataset.name,
+            "total_rows": total_rows,
+            "loaded_rows": len(display_df),
+            "data": data,
+            "schema": schema,
+            "column_stats": stats,
+            "can_load_more": total_rows > row_limit,
+        }
     
     async def cmd_analyze_dataset(self, dataset_id: str, analysis_type: str, column: str = None):
         """
@@ -484,28 +613,7 @@ class AnalyticsBackend:
             'original_count': len(dataset.get_dataframe_copy())
         }
     
-    # ========== Helper Methods ==========
-    
-    def _sanitize_path(self, file_path: str) -> str:
-        """Sanitize file path to prevent directory traversal attacks."""
-        try:
-            path = Path(file_path).resolve()
-            path_str = str(path)
-            
-            if '..' in path_str or path_str.startswith('/etc'):
-                raise ValueError("Invalid file path")
-            
-            if not path.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
-            
-            if not path.is_file():
-                raise ValueError(f"Not a file: {file_path}")
-            
-            return str(path)
-            
-        except Exception as e:
-            logger.warning(f"Path sanitization failed for '{file_path}': {e}")
-            raise ValueError(f"Invalid file path: {file_path}")
+    # ========== Lifecycle ==========
     
     async def start(self):
         """Start the backend server."""
