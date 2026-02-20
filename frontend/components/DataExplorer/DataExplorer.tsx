@@ -1,203 +1,198 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
-import {
-    Search, RefreshCw, AlertCircle, ArrowUpDown,
-    ArrowUp, ArrowDown, Database, Loader
-} from 'lucide-react';
-import { TableVirtuoso } from 'react-virtuoso';
+import { 
+    useReactTable, 
+    getCoreRowModel, 
+    getSortedRowModel, 
+    flexRender,
+    createColumnHelper,
+    SortingState
+} from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { clientDataEngine } from '../../services/ClientDataEngine';
 import './DataExplorer.css';
 
 interface DataExplorerProps {
     datasetId: string;
-    onLoadComplete?: () => void;
 }
 
-interface PreviewData {
-    columns: string[];
-    rows: any[][];
-    types: Record<string, string>;
-}
-
-interface DataQualityReport {
-    overall_score: number;
-    issues: any[];
-    summary: string;
-    row_count: number;
-}
-
-export function DataExplorer({ datasetId, onLoadComplete }: DataExplorerProps) {
-    const [preview, setPreview] = useState<PreviewData | null>(null);
-    const [qualityReport, setQualityReport] = useState<DataQualityReport | null>(null);
+export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
     const [loading, setLoading] = useState(false);
-    const [analyzing, setAnalyzing] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [sortCol, setSortCol] = useState<string>('');
-    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-    const [filterText, setFilterText] = useState('');
+    const [dataLoaded, setDataLoaded] = useState(false);
+    
+    // We use a simple forceUpdate pattern to refresh when ClientEngine changes
+    const [, setForceUpdate] = useState(0); 
 
+    // --- 1. Fetch Data ---
     useEffect(() => {
-        if (datasetId) loadData();
+        if (!datasetId) return;
+
+        let mounted = true;
+        const fetchDataset = async () => {
+            setLoading(true);
+            setError(null);
+            setDataLoaded(false);
+            try {
+                const res: any = await invoke('call_python_backend', {
+                    command: 'get_dataset_full',
+                    payload: { dataset_id: datasetId, row_limit: 50000 } 
+                });
+
+                if (!mounted) return;
+
+                clientDataEngine.loadDataset(
+                    res.data,
+                    res.schema,
+                    res.column_stats,
+                    res.total_rows
+                );
+
+                setDataLoaded(true);
+            } catch (err: any) {
+                if (mounted) setError(err.message || String(err));
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        };
+
+        fetchDataset();
+        return () => { mounted = false; };
     }, [datasetId]);
 
-    const loadData = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await invoke<any>('call_python_backend', {
-                command: 'preview_dataset',
-                payload: { dataset_id: datasetId, limit: 5000 } // Up to 5000 rows preview
-            });
-            if (res.preview) {
-                setPreview(res.preview);
-            }
-            checkQuality();
-            onLoadComplete?.();
-        } catch (err: any) {
-            setError(`Failed to load data: ${err}`);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // --- 2. Prepare Data & Columns for TanStack Table ---
+    
+    // Get data from engine
+    const data = useMemo(() => {
+        return dataLoaded ? clientDataEngine.getFilteredData() : [];
+    }, [dataLoaded, clientDataEngine.getFilteredData()]); // Re-run if engine data changes
 
-    const checkQuality = async () => {
-        setAnalyzing(true);
-        try {
-            const res = await invoke<any>('call_python_backend', {
-                command: 'check_data_quality',
-                payload: { dataset_id: datasetId }
-            });
-            setQualityReport(res);
-        } catch (err) {
-            console.warn("Quality check failed", err);
-        } finally {
-            setAnalyzing(false);
-        }
-    };
+    // Generate Columns
+    const columns = useMemo(() => {
+        if (!dataLoaded) return [];
+        const schema = clientDataEngine.getSchema();
+        const columnHelper = createColumnHelper<any>();
 
-    const getProcessedRows = useCallback(() => {
-        if (!preview) return [];
-        let rows = [...preview.rows];
-        if (filterText) {
-            const lowerFilter = filterText.toLowerCase();
-            rows = rows.filter(row =>
-                row.some(cell => String(cell).toLowerCase().includes(lowerFilter))
-            );
-        }
-        if (sortCol) {
-            const colIndex = preview.columns.indexOf(sortCol);
-            if (colIndex > -1) {
-                rows.sort((a, b) => {
-                    const valA = a[colIndex];
-                    const valB = b[colIndex];
-                    if (valA === valB) return 0;
-                    if (valA === null) return 1;
-                    if (valB === null) return -1;
-                    const comparison = valA < valB ? -1 : 1;
-                    return sortDir === 'asc' ? comparison : -comparison;
-                });
-            }
-        }
-        return rows;
-    }, [preview, filterText, sortCol, sortDir]);
+        return Object.values(schema).map(col => 
+            columnHelper.accessor(row => row[col.name], {
+                id: col.name,
+                header: col.name,
+                cell: info => info.getValue(),
+            })
+        );
+    }, [dataLoaded]);
 
-    const handleSort = (col: string) => {
-        if (sortCol === col) setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
-        else { setSortCol(col); setSortDir('asc'); }
-    };
+    // --- 3. Initialize TanStack Table (v8) ---
+    const [sorting, setSorting] = useState<SortingState>([]);
 
-    if (loading) return (
-        <div className="explorer-loading">
-            <Loader className="spin" size={32} />
-            <p>Loading dataset preview...</p>
-        </div>
-    );
-    if (error) return (
-        <div className="explorer-error">
-            <AlertCircle size={32} />
-            <p>{error}</p>
-            <button onClick={loadData}>Retry</button>
-        </div>
-    );
-    if (!preview) return null;
+    const table = useReactTable({
+        data,
+        columns,
+        state: {
+            sorting,
+        },
+        onSortingChange: setSorting,
+        getCoreRowModel: getCoreRowModel(),
+        getSortedRowModel: getSortedRowModel(),
+        // This ensures the table doesn't scan deep objects, fixing the JSON crash
+        defaultColumn: {
+            size: 150, // Default width
+        },
+    });
 
-    const processedRows = getProcessedRows();
+    // --- 4. TanStack Virtual (The Scrolling Magic) ---
+    const tableContainerRef = useRef<HTMLDivElement>(null);
+    const { rows } = table.getRowModel();
+    
+    const rowVirtualizer = useVirtualizer({
+        count: rows.length,
+        getScrollElement: () => tableContainerRef.current,
+        estimateSize: () => 35, // Estimate row height (35px)
+        overscan: 10, // Render 10 rows outside view for smoothness
+    });
 
-    const VirtuosoTableComponents = {
-        Table: (props: any) => <table {...props} className="data-table" />,
-        TableHead: React.forwardRef((props, ref) => <thead {...props} ref={ref} />),
-        TableBody: React.forwardRef((props, ref) => <tbody {...props} ref={ref} />),
-        TableRow: ({ item: row, ...props }: any) => <tr {...props} />,
-    };
+    // --- Render ---
+    if (loading) return <div className="explorer-loading">Loading dataset...</div>;
+    if (error) return <div className="explorer-error">Error: {error}</div>;
+    if (!dataLoaded) return <div className="explorer-empty">No data selected</div>;
 
     return (
         <div className="data-explorer-container">
-            <div className="explorer-toolbar">
-                <div className="search-box">
-                    <Search size={16} />
-                    <input
-                        type="text"
-                        placeholder="Search data..."
-                        value={filterText}
-                        onChange={(e) => setFilterText(e.target.value)}
-                    />
-                </div>
-                <div className="toolbar-actions">
-                    <span className="row-count">{processedRows.length.toLocaleString()} rows</span>
-                    <button className="icon-btn" onClick={loadData} title="Refresh">
-                        <RefreshCw size={16} />
-                    </button>
-                </div>
+            <div className="explorer-stats">
+                <span className="badge">{rows.length.toLocaleString()} rows</span>
+                <span className="badge">{columns.length} columns</span>
             </div>
 
-            {qualityReport && (
-                <div className={`quality-banner ${qualityReport.overall_score > 80 ? 'good' : 'warning'}`}>
-                    <div className="score-circle">{qualityReport.overall_score}</div>
-                    <div className="score-info">
-                        <h4>Data Quality Score</h4>
-                        <p>{qualityReport.summary}</p>
-                    </div>
-                    {analyzing && <Loader size={16} className="spin" />}
-                </div>
-            )}
+            {/* Scrollable Container */}
+            <div 
+                className="table-wrapper" 
+                ref={tableContainerRef}
+                style={{ overflow: 'auto', height: '100%' }}
+            >
+                {/* The Virtualizer creates a massive div to fake the scrollbar height */}
+                <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
+                    <table className="excel-grid">
+                        <thead className="sticky-header">
+                            {table.getHeaderGroups().map(headerGroup => (
+                                <tr key={headerGroup.id} className="tr header-row">
+                                    {headerGroup.headers.map(header => (
+                                        <th 
+                                            key={header.id} 
+                                            className="th"
+                                            style={{ width: header.getSize() }}
+                                            onClick={header.column.getToggleSortingHandler()}
+                                        >
+                                            <div className="th-content">
+                                                {flexRender(header.column.columnDef.header, header.getContext())}
+                                                <span>
+                                                    {{
+                                                        asc: ' 🔼',
+                                                        desc: ' 🔽',
+                                                    }[header.column.getIsSorted() as string] ?? null}
+                                                </span>
+                                            </div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            ))}
+                        </thead>
 
-            <div style={{ height: '600px', width: '100%' }}>
-                <TableVirtuoso
-                    data={processedRows}
-                    components={VirtuosoTableComponents}
-                    fixedHeaderContent={() => (
-                        <tr>
-                            {preview.columns.map(col => (
-                                <th key={col} onClick={() => handleSort(col)}>
-                                    <div className="th-content">
-                                        <span>{col}</span>
-                                        {sortCol === col ? (
-                                            sortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                                        ) : (
-                                            <ArrowUpDown size={14} className="sort-hint" />
-                                        )}
-                                    </div>
-                                    <div className="dtype-badge">{preview.types[col]}</div>
-                                </th>
-                            ))}
-                        </tr>
-                    )}
-                    itemContent={(index, row) => (
-                        <>
-                            {row.map((cell: any, cellIndex: number) => (
-                                <td key={cellIndex}>
-                                    {cell === null ? <span className="null-val">null</span> : String(cell)}
-                                </td>
-                            ))}
-                        </>
-                    )}
-                />
-            </div>
-            {processedRows.length === 0 && (
-                <div className="no-results">
-                    <Database size={24} />
-                    <p>No matching rows found</p>
+                        <tbody>
+                            {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                                const row = rows[virtualRow.index];
+                                return (
+                                    <tr 
+                                        key={row.id} 
+                                        className="tr"
+                                        style={{
+                                            height: `${virtualRow.size}px`,
+                                            transform: `translateY(${virtualRow.start}px)`,
+                                            position: 'absolute', // Absolute positioning is key for virtualizer
+                                            top: 0,
+                                            left: 0,
+                                            width: '100%',
+                                        }}
+                                    >
+                                        {row.getVisibleCells().map(cell => (
+                                            <td 
+                                                key={cell.id} 
+                                                className="td"
+                                                style={{ width: cell.column.getSize() }}
+                                                title={String(cell.getValue())}
+                                            >
+                                                {cell.getValue() === null ? 
+                                                    <span className="null-cell">null</span> : 
+                                                    String(cell.getValue())
+                                                }
+                                            </td>
+                                        ))}
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
-            )}
+            </div>
         </div>
     );
-}
+};

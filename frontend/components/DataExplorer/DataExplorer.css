@@ -1,378 +1,3 @@
-/* DataExplorer.css – Modern, clean, Excel‑like table explorer */
-
-/* Container – takes full height of parent */
-.data-explorer-container {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    width: 100%;
-    background-color: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* ===== Toolbar ===== */
-.explorer-toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 20px;
-    background-color: #f9fafb;
-    border-bottom: 1px solid #eaeef2;
-}
-
-.search-box {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: white;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 6px 12px;
-    transition: all 0.2s;
-    width: 280px;
-}
-
-.search-box:focus-within {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.search-box input {
-    border: none;
-    background: transparent;
-    font-size: 14px;
-    width: 100%;
-    outline: none;
-    color: #1e293b;
-}
-
-.search-box input::placeholder {
-    color: #94a3b8;
-}
-
-.toolbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.row-count {
-    font-size: 14px;
-    font-weight: 500;
-    color: #475569;
-    background: #f1f5f9;
-    padding: 4px 12px;
-    border-radius: 20px;
-}
-
-.icon-btn {
-    background: transparent;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    padding: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #4b5563;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.icon-btn:hover {
-    background: #f1f5f9;
-    border-color: #9ca3af;
-}
-
-/* ===== Quality Banner ===== */
-.quality-banner {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin: 16px 20px;
-    padding: 12px 20px;
-    border-radius: 10px;
-    background: white;
-    border-left: 6px solid;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-}
-
-.quality-banner.good {
-    border-left-color: #10b981;
-    background: #f0fdf4;
-}
-
-.quality-banner.warning {
-    border-left-color: #f59e0b;
-    background: #fffbeb;
-}
-
-.score-circle {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 18px;
-    background: white;
-    color: #0f172a;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-}
-
-.quality-banner.good .score-circle {
-    border: 2px solid #10b981;
-    color: #065f46;
-}
-
-.quality-banner.warning .score-circle {
-    border: 2px solid #f59e0b;
-    color: #92400e;
-}
-
-.score-info h4 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: #1e293b;
-}
-
-.score-info p {
-    font-size: 13px;
-    margin: 0;
-    color: #475569;
-}
-
-/* ===== Table Container – scrollable ===== */
-.table-container {
-    flex: 1;
-    overflow: auto;
-    position: relative;
-    border-top: 1px solid #e5e7eb;
-    background: white;
-}
-
-/* ===== Native Table ===== */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-    table-layout: auto;
-    min-width: 600px;
-}
-
-/* Sticky Header */
-thead {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: white;
-}
-
-th {
-    background: #f8fafc;
-    color: #1e293b;
-    font-weight: 600;
-    padding: 14px 16px;
-    text-align: left;
-    border-bottom: 2px solid #e2e8f0;
-    white-space: nowrap;
-    user-select: none;
-    cursor: pointer;
-    transition: background 0.15s;
-}
-
-th:hover {
-    background: #f1f5f9;
-}
-
-.th-content {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.th-content span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.dtype-badge {
-    font-size: 10px;
-    font-weight: 400;
-    color: #64748b;
-    background: #e2e8f0;
-    padding: 2px 6px;
-    border-radius: 12px;
-    display: inline-block;
-    margin-top: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.sort-hint {
-    opacity: 0.4;
-}
-
-/* Table Cells */
-td {
-    padding: 12px 16px;
-    border-bottom: 1px solid #edf2f7;
-    color: #334155;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 300px;
-}
-
-tr:last-child td {
-    border-bottom: none;
-}
-
-/* Row hover */
-tbody tr:hover {
-    background-color: #f1f5f9;
-}
-
-/* Alternating row colors for better readability */
-tbody tr:nth-child(even) {
-    background-color: #fafcfc;
-}
-
-tbody tr:nth-child(even):hover {
-    background-color: #f1f5f9;
-}
-
-/* Null values */
-.null-val {
-    color: #94a3b8;
-    font-style: italic;
-    font-size: 13px;
-}
-
-/* No results */
-.no-results {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 60px 20px;
-    color: #64748b;
-    background: #f8fafc;
-    border-radius: 8px;
-    margin: 20px;
-    border: 1px dashed #cbd5e1;
-}
-
-.no-results svg {
-    margin-bottom: 12px;
-    color: #94a3b8;
-}
-
-.no-results p {
-    font-size: 15px;
-    margin: 0;
-}
-
-/* ===== Loading & Error States ===== */
-.explorer-loading,
-.explorer-error {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    min-height: 300px;
-    color: #5f6b7a;
-    background: white;
-    border-radius: 12px;
-    padding: 40px;
-}
-
-.explorer-loading .spin {
-    animation: spin 1s linear infinite;
-    color: #3b82f6;
-    margin-bottom: 16px;
-}
-
-.explorer-error button {
-    margin-top: 20px;
-    padding: 8px 24px;
-    background: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-
-.explorer-error button:hover {
-    background: #2563eb;
-}
-
-/* ===== Animations ===== */
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-/* ===== Responsive Adjustments ===== */
-@media (max-width: 768px) {
-    .explorer-toolbar {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 12px;
-    }
-
-    .search-box {
-        width: 100%;
-    }
-
-    .toolbar-actions {
-        justify-content: space-between;
-    }
-
-    .quality-banner {
-        flex-direction: column;
-        align-items: flex-start;
-        margin: 12px;
-    }
-
-    .score-circle {
-        align-self: center;
-    }
-}
-
-/* ===== Optional: Custom scrollbar for table container ===== */
-.table-container::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-.table-container::-webkit-scrollbar-track {
-    background: #f1f5f9;
-    border-radius: 4px;
-}
-
-.table-container::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 4px;
-}
-
-.table-container::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-}
-
 .data-explorer-container {
     height: 100%;
     display: flex;
@@ -396,19 +21,45 @@ tbody tr:nth-child(even):hover {
 
 .table-wrapper {
     flex: 1;
-    overflow: hidden;
-    /* Virtuoso handles the scroll inside this container */
+    /* overflow is handled inline in the TSX file */
 }
 
-/* Excel-like Grid Styles */
 .excel-grid {
     border-collapse: collapse;
     width: 100%;
     table-layout: fixed;
-    /* Important for performance */
 }
 
-.th,
+/* Header needs to be sticky and on top */
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f1f3f4;
+    display: table;
+    /* Ensure header keeps table layout */
+    width: 100%;
+}
+
+.th {
+    padding: 8px;
+    border-right: 1px solid #ccc;
+    border-bottom: 2px solid #ccc;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    background: #f1f3f4;
+    /* Opaque background for sticky header */
+}
+
+/* Rows are absolutely positioned, so we need careful styling */
+.tr {
+    display: flex;
+    /* Flex layout for rows works best with virtualizer */
+    width: 100%;
+}
+
 .td {
     padding: 8px;
     border-right: 1px solid #eee;
@@ -417,23 +68,11 @@ tbody tr:nth-child(even):hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    height: 35px;
-    /* Fixed height helps browser render faster */
+    display: block;
+    /* Important for flex-row cells */
 }
 
-.th {
-    background: #f1f3f4;
-    font-weight: 600;
-    text-align: left;
-    cursor: pointer;
-    user-select: none;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    /* Keeps header above rows */
-}
-
-.tr:hover .td {
+.tr:hover {
     background: #f8f9fa;
 }
 
