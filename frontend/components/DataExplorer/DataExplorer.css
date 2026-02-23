@@ -1,3 +1,114 @@
+/* --- DATA TOOLBAR --- */
+.data-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #ffffff;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.toolbar-left,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.search-input {
+    padding: 6px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 250px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-input:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.stats-text {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.toolbar-btn {
+    padding: 6px 12px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #374151;
+    cursor: pointer;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+    background: #e5e7eb;
+}
+
+.toolbar-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.toolbar-btn.primary {
+    background: #2563eb;
+    color: white;
+    border-color: #1d4ed8;
+}
+
+.toolbar-btn.primary:hover {
+    background: #1d4ed8;
+}
+
+/* --- COLUMN VISIBILITY DROPDOWN --- */
+.dropdown-container {
+    position: relative;
+}
+
+.column-dropdown {
+    position: absolute;
+    top: 110%;
+    right: 0;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    padding: 8px 0;
+    min-width: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 500;
+}
+
+.col-toggle,
+.col-toggle-all {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.col-toggle:hover {
+    background: #f3f4f6;
+}
+
+.col-divider {
+    height: 1px;
+    background: #e0e0e0;
+    margin: 4px 0;
+}
+
+/* --- GRID BASE & ALIGNMENT FIXES --- */
 .data-explorer-container {
     height: 100%;
     display: flex;
@@ -8,85 +119,259 @@
     overflow: hidden;
 }
 
-.explorer-stats {
-    padding: 10px 15px;
-    background: #f8f9fa;
-    border-bottom: 1px solid #ddd;
-    display: flex;
-    gap: 15px;
-    font-size: 12px;
-    color: #555;
-    font-weight: 600;
-}
-
+/* --- GRID BASE & ALIGNMENT FIXES --- */
 .table-wrapper {
     flex: 1;
-    /* overflow is handled inline in the TSX file */
+    background: #fff;
 }
 
 .excel-grid {
-    border-collapse: collapse;
+    display: block;
     width: 100%;
-    table-layout: fixed;
+    /* Now safely takes the width of table.getTotalSize() */
+    border-collapse: collapse;
 }
 
-/* Header needs to be sticky and on top */
+.sticky-header,
+.sticky-footer,
+tbody {
+    display: block;
+    width: 100%;
+}
+
 .sticky-header {
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 200;
+    /* Stays above scrolling rows */
     background: #f1f3f4;
-    display: table;
-    /* Ensure header keeps table layout */
-    width: 100%;
 }
 
-.th {
-    padding: 8px;
-    border-right: 1px solid #ccc;
-    border-bottom: 2px solid #ccc;
-    font-size: 13px;
-    font-weight: 600;
-    text-align: left;
-    cursor: pointer;
-    background: #f1f3f4;
-    /* Opaque background for sticky header */
+.sticky-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 50;
+    /* Stays above scrolling rows */
+    background: #f8f9fa;
 }
 
-/* Rows are absolutely positioned, so we need careful styling */
 .tr {
     display: flex;
-    /* Flex layout for rows works best with virtualizer */
     width: 100%;
-}
-
-.td {
-    padding: 8px;
-    border-right: 1px solid #eee;
-    border-bottom: 1px solid #eee;
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
-    /* Important for flex-row cells */
+    background: #ffffff;
+    z-index: 1;
 }
 
 .tr:hover {
     background: #f8f9fa;
 }
 
+/* CRITICAL FIX: box-sizing ensures padding doesn't break inline widths */
+.th,
+.td {
+    display: block;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    /* Crucial for perfect alignment */
+    padding: 8px;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.th {
+    background: #f1f3f4;
+    font-weight: 600;
+    text-align: left;
+    border-bottom: 2px solid #ccc;
+}
+
+
+/* --- ICONS & INTERNAL CELL STYLES --- */
+.type-icon {
+    color: #9ca3af;
+    margin-right: 6px;
+}
+
+.search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-icon {
+    position: absolute;
+    left: 10px;
+    color: #6b7280;
+}
+
+.search-box .search-input {
+    padding-left: 32px;
+}
+
+/* --- DATA QUALITY PROFILING BAR --- */
+.th-header-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+}
+
+.quality-bar {
+    width: 100%;
+    height: 3px;
+    display: flex;
+    background: #e5e7eb;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.quality-valid {
+    background: #10b981;
+    height: 100%;
+}
+
+.quality-null {
+    background: #ef4444;
+    height: 100%;
+}
+
+.th-title {
+    display: flex;
+    align-items: center;
+}
+
+.th-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.th-clickable {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 4px;
+    cursor: pointer;
+}
+
+/* --- PRECISION COLUMN FILTERS --- */
+.th-filter-zone {
+    margin-top: 8px;
+    font-weight: normal;
+}
+
+.string-filter {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.string-filter .filter-icon {
+    position: absolute;
+    left: 6px;
+    color: #9ca3af;
+}
+
+.string-filter input {
+    width: 100%;
+    padding: 4px 4px 4px 20px;
+    font-size: 11px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+}
+
+.number-filter {
+    display: flex;
+    gap: 4px;
+}
+
+.number-filter input {
+    width: 50%;
+    padding: 4px;
+    font-size: 11px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+}
+
+/* --- IN-CELL DATA BARS --- */
+.data-bar-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.data-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 2px;
+    bottom: 2px;
+    background: #dbeafe;
+    border-radius: 2px;
+    z-index: 0;
+    transition: width 0.3s ease;
+}
+
+.data-bar-text {
+    position: relative;
+    z-index: 1;
+    padding-left: 4px;
+}
+
+/* --- QUICK AGGREGATIONS (FOOTER) --- */
+.footer-cell {
+    background: #f8f9fa;
+    border-top: 2px solid #ccc;
+}
+
+.footer-agg {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.footer-avg {
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.footer-count {
+    color: #6b7280;
+    font-style: italic;
+    font-weight: normal;
+}
+
+/* --- GENERAL TWEAKS --- */
 .null-cell {
     color: #aaa;
     font-style: italic;
 }
 
-.explorer-loading,
-.explorer-error {
+.explorer-message {
     height: 100%;
     display: flex;
+    flex-direction: column;
+    gap: 12px;
     align-items: center;
     justify-content: center;
-    color: #666;
-    flex-direction: column;
+    color: #6b7280;
+    font-size: 16px;
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
 }

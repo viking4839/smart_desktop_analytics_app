@@ -58,6 +58,7 @@ import {
 
 // ----- NEW: Client‑Side DataExplorer -----
 import { DataExplorer } from '../components/DataExplorer/DataExplorer';
+import { AnalyticsDashboard } from '../components/AnalyticsDashboard/AnalyticsDashboard';
 
 import './App.css';
 
@@ -161,6 +162,7 @@ function App() {
     const [qualityScore, setQualityScore] = useState<QualityScore | null>(null);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [activeRightTab, setActiveRightTab] = useState<'results' | 'dataExplorer'>('results');
+    const [activeTab, setActiveTab] = useState<'data' | 'visualize'>('data');
 
     // ----- Initialisation -----
     useEffect(() => {
@@ -840,6 +842,7 @@ function App() {
                 </div>
 
                 {/* ========== RIGHT PANEL – Results / Data Explorer ========== */}
+                {/* ========== RIGHT PANEL – Results / Data Explorer / Analytics ========== */}
                 <div className="right-panel">
                     <div className="panel-tabs">
                         <button
@@ -866,10 +869,17 @@ function App() {
                                 </span>
                             )}
                         </button>
+                        <button
+                            className={`tab-btn ${activeRightTab === 'analytics' ? 'active' : ''}`}
+                            onClick={() => setActiveRightTab('analytics')}
+                        >
+                            <Activity size={16} />
+                            Analytics & Charts
+                        </button>
                     </div>
 
                     <div className="tab-content">
-                        {activeRightTab === 'results' ? (
+                        {activeRightTab === 'results' && (
                             /* ----- Results Panel ----- */
                             <div className="panel-section">
                                 <h2>Results</h2>
@@ -974,8 +984,9 @@ function App() {
                                     </div>
                                 )}
                             </div>
-                        ) : (
-                            /* ----- NEW: Self‑contained DataExplorer component ----- */
+                        )}
+
+                        {activeRightTab === 'dataExplorer' && (
                             <div className="panel-section data-explorer-wrapper">
                                 {selectedDataset ? (
                                     <DataExplorer
@@ -986,6 +997,19 @@ function App() {
                                     <div className="empty-state">
                                         <Database size={48} strokeWidth={1.5} />
                                         <p>Select a dataset to explore</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeRightTab === 'analytics' && (
+                            <div className="panel-section analytics-wrapper">
+                                {selectedDataset ? (
+                                    <AnalyticsDashboard datasetId={selectedDataset} />
+                                ) : (
+                                    <div className="empty-state">
+                                        <Database size={48} strokeWidth={1.5} />
+                                        <p>Select a dataset to view analytics</p>
                                     </div>
                                 )}
                             </div>

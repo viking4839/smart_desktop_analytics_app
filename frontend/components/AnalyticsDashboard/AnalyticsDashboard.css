@@ -1,0 +1,230 @@
+.analytics-container {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    height: 100%;
+    overflow-y: auto;
+    background: #f8f9fa;
+}
+
+.analytics-card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    padding: 24px;
+    border: 1px solid #e5e7eb;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    color: #111827;
+}
+
+.card-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.card-desc {
+    color: #6b7280;
+    font-size: 13px;
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+/* --- HEATMAP STYLES --- */
+.heatmap-wrapper {
+    overflow-x: auto;
+    padding-bottom: 12px;
+}
+
+.heatmap-grid {
+    display: grid;
+    gap: 2px;
+    font-size: 11px;
+}
+
+.heatmap-label-top {
+    text-align: center;
+    font-weight: 600;
+    padding-bottom: 8px;
+    color: #4b5563;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    height: 100px;
+    display: flex;
+    align-items: center;
+}
+
+.heatmap-label-side {
+    text-align: right;
+    font-weight: 600;
+    padding-right: 12px;
+    color: #4b5563;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.heatmap-cell {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-weight: 500;
+    transition: transform 0.1s;
+    cursor: pointer;
+}
+
+.heatmap-cell:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+}
+
+/* --- REGRESSION STYLES --- */
+.regression-controls {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #f3f4f6;
+    border-radius: 8px;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+
+.control-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.control-group select {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.regression-stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.stat-box {
+    flex: 1;
+    padding: 16px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #3b82f6;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1e3a8a;
+}
+
+.stat-value.equation {
+    font-family: monospace;
+    font-size: 20px;
+}
+
+.chart-container {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px 0;
+}
+
+.analytics-msg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 100%;
+    color: #6b7280;
+    font-size: 16px;
+}
+
+.analytics-msg.error {
+    color: #ef4444;
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.positive,
+.negative {
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.positive {
+    background-color: #99bdf3;
+    color: #0b3d91;
+}
+
+.negative {
+    background-color: #f7b2b2;
+    color: #8b0000;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    color: #111827;
+}
+
+.card-header .refresh-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 4px;
+    border-radius: 4px;
+    margin-left: auto;
+}
+
+.card-header .refresh-btn:hover {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.card-header .refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

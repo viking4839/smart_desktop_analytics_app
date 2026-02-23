@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
-import { 
-    useReactTable, 
-    getCoreRowModel, 
-    getSortedRowModel, 
-    flexRender,
-    createColumnHelper,
-    SortingState
+import {
+    useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
+    flexRender, createColumnHelper, SortingState, VisibilityState, ColumnFiltersState
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { Search, RotateCcw, Settings, Download, ArrowUp, ArrowDown, Filter, Hash, Type, Calendar, LayoutPanelLeft } from 'lucide-react';
 import { clientDataEngine } from '../../services/ClientDataEngine';
 import './DataExplorer.css';
 
@@ -20,34 +17,23 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [dataLoaded, setDataLoaded] = useState(false);
-    
-    // We use a simple forceUpdate pattern to refresh when ClientEngine changes
-    const [, setForceUpdate] = useState(0); 
+    const [, setForceUpdate] = useState(0);
+
+    const [globalSearch, setGlobalSearch] = useState('');
+    const [showColumnMenu, setShowColumnMenu] = useState(false);
 
     // --- 1. Fetch Data ---
     useEffect(() => {
         if (!datasetId) return;
-
         let mounted = true;
         const fetchDataset = async () => {
-            setLoading(true);
-            setError(null);
-            setDataLoaded(false);
+            setLoading(true); setError(null); setDataLoaded(false); setGlobalSearch('');
             try {
                 const res: any = await invoke('call_python_backend', {
-                    command: 'get_dataset_full',
-                    payload: { dataset_id: datasetId, row_limit: 50000 } 
+                    command: 'get_dataset_full', payload: { dataset_id: datasetId, row_limit: 50000 }
                 });
-
                 if (!mounted) return;
-
-                clientDataEngine.loadDataset(
-                    res.data,
-                    res.schema,
-                    res.column_stats,
-                    res.total_rows
-                );
-
+                clientDataEngine.loadDataset(res.data, res.schema, res.column_stats, res.total_rows);
                 setDataLoaded(true);
             } catch (err: any) {
                 if (mounted) setError(err.message || String(err));
@@ -55,141 +41,268 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
                 if (mounted) setLoading(false);
             }
         };
-
         fetchDataset();
         return () => { mounted = false; };
     }, [datasetId]);
 
-    // --- 2. Prepare Data & Columns for TanStack Table ---
-    
-    // Get data from engine
-    const data = useMemo(() => {
-        return dataLoaded ? clientDataEngine.getFilteredData() : [];
-    }, [dataLoaded, clientDataEngine.getFilteredData()]); // Re-run if engine data changes
-
-    // Generate Columns
+    // --- 2. Define Columns with Advanced Analytics ---
     const columns = useMemo(() => {
         if (!dataLoaded) return [];
         const schema = clientDataEngine.getSchema();
         const columnHelper = createColumnHelper<any>();
 
-        return Object.values(schema).map(col => 
-            columnHelper.accessor(row => row[col.name], {
+        return Object.values(schema).map(col => {
+            const isNumeric = col.data_type === 'number' || col.data_type === 'float' || col.data_type === 'integer';
+            const stats = clientDataEngine.getColumnStats(col.name) || {};
+            const nullPct = stats.null_percentage || 0;
+            const validPct = 100 - nullPct;
+
+            return columnHelper.accessor(row => row[col.name], {
                 id: col.name,
-                header: col.name,
-                cell: info => info.getValue(),
-            })
-        );
+
+                // HEADER: Adds Data Quality Bar & Icon
+                header: () => (
+                    <div className="th-header-container">
+                        {/* Data Quality Profiling Bar */}
+                        <div className="quality-bar" title={`${validPct.toFixed(1)}% Valid, ${nullPct.toFixed(1)}% Null`}>
+                            <div className="quality-valid" style={{ width: `${validPct}%` }} />
+                            <div className="quality-null" style={{ width: `${nullPct}%` }} />
+                        </div>
+                        <div className="th-title">
+                            {isNumeric ? <Hash size={14} className="type-icon" /> : col.data_type === 'date' ? <Calendar size={14} className="type-icon" /> : <Type size={14} className="type-icon" />}
+                            <span className="th-name" title={col.name}>{col.name}</span>
+                        </div>
+                    </div>
+                ),
+
+                // CELL: Adds Conditional Formatting (Data Bars)
+                cell: info => {
+                    const val = info.getValue();
+                    if (val === null || val === undefined) return <span className="null-cell">null</span>;
+
+                    if (isNumeric && stats.max) {
+                        const pct = Math.max(0, Math.min(100, (Number(val) / (stats.max || 1)) * 100));
+                        return (
+                            <div className="data-bar-container">
+                                <div className="data-bar-fill" style={{ width: `${pct}%` }} />
+                                <span className="data-bar-text">{Number(val).toLocaleString()}</span>
+                            </div>
+                        );
+                    }
+                    return String(val);
+                },
+
+                // FOOTER: Quick Aggregations based on visible rows
+                footer: info => {
+                    if (!isNumeric) return <span className="footer-count">Count: {info.table.getFilteredRowModel().rows.length}</span>;
+
+                    // Calculate Sum & Average of currently filtered rows
+                    const rows = info.table.getFilteredRowModel().rows;
+                    const sum = rows.reduce((acc, row) => acc + (Number(row.getValue(col.name)) || 0), 0);
+                    const avg = rows.length > 0 ? sum / rows.length : 0;
+
+                    return (
+                        <div className="footer-agg">
+                            <div>Σ: {sum.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                            <div className="footer-avg">x̄: {avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                        </div>
+                    );
+                },
+
+                // Custom filter logic for TanStack
+                filterFn: isNumeric ? 'inNumberRange' : 'includesString',
+            });
+        });
     }, [dataLoaded]);
 
-    // --- 3. Initialize TanStack Table (v8) ---
+    const data = useMemo(() => dataLoaded ? clientDataEngine.getRawData() : [], [dataLoaded]);
+
+    // --- 3. Initialize TanStack Table ---
     const [sorting, setSorting] = useState<SortingState>([]);
+    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+    const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
     const table = useReactTable({
         data,
         columns,
-        state: {
-            sorting,
-        },
+        state: { sorting, columnFilters, columnVisibility, globalFilter: globalSearch },
         onSortingChange: setSorting,
+        onColumnFiltersChange: setColumnFilters,
+        onColumnVisibilityChange: setColumnVisibility,
+        onGlobalFilterChange: setGlobalSearch,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
-        // This ensures the table doesn't scan deep objects, fixing the JSON crash
-        defaultColumn: {
-            size: 150, // Default width
-        },
+        getFilteredRowModel: getFilteredRowModel(), // Handles column & global filters
+        defaultColumn: { size: 160 },
     });
 
-    // --- 4. TanStack Virtual (The Scrolling Magic) ---
+    // Export Utility
+    const exportToCSV = () => {
+        const exportData = table.getFilteredRowModel().rows;
+        if (exportData.length === 0) return;
+        const visibleCols = table.getVisibleLeafColumns().map(c => c.id);
+        const csvRows = [visibleCols.map(c => `"${c}"`).join(',')];
+
+        exportData.forEach(row => {
+            const values = visibleCols.map(col => {
+                const val = row.getValue(col) === null ? '' : String(row.getValue(col));
+                return `"${val.replace(/"/g, '""')}"`;
+            });
+            csvRows.push(values.join(','));
+        });
+
+        const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute('download', `export_${datasetId}.csv`);
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    };
+
+    // --- 4. Virtualizer ---
     const tableContainerRef = useRef<HTMLDivElement>(null);
     const { rows } = table.getRowModel();
-    
     const rowVirtualizer = useVirtualizer({
         count: rows.length,
         getScrollElement: () => tableContainerRef.current,
-        estimateSize: () => 35, // Estimate row height (35px)
-        overscan: 10, // Render 10 rows outside view for smoothness
+        estimateSize: () => 35,
+        overscan: 10,
     });
 
-    // --- Render ---
-    if (loading) return <div className="explorer-loading">Loading dataset...</div>;
-    if (error) return <div className="explorer-error">Error: {error}</div>;
-    if (!dataLoaded) return <div className="explorer-empty">No data selected</div>;
+    if (loading) return <div className="explorer-message"><RotateCcw className="spinner" /> Loading Data...</div>;
+    if (error) return <div className="explorer-message error">⚠️ {error}</div>;
+    if (!dataLoaded) return <div className="explorer-message"><LayoutPanelLeft /> Select a dataset</div>;
 
     return (
         <div className="data-explorer-container">
-            <div className="explorer-stats">
-                <span className="badge">{rows.length.toLocaleString()} rows</span>
-                <span className="badge">{columns.length} columns</span>
+            {/* --- TOOLBAR --- */}
+            <div className="data-toolbar">
+                <div className="toolbar-left">
+                    <div className="search-box">
+                        <Search size={16} className="search-icon" />
+                        <input
+                            type="text"
+                            className="search-input"
+                            placeholder="Global search..."
+                            value={globalSearch}
+                            onChange={(e) => setGlobalSearch(e.target.value)}
+                        />
+                    </div>
+                    <span className="stats-text">
+                        Showing {table.getFilteredRowModel().rows.length.toLocaleString()} of {clientDataEngine.getTotalRows().toLocaleString()} rows
+                    </span>
+                </div>
+
+                <div className="toolbar-right">
+                    <button className="toolbar-btn" onClick={() => { setGlobalSearch(''); setColumnFilters([]); setSorting([]); }}>
+                        <RotateCcw size={14} /> Reset
+                    </button>
+
+                    <div className="dropdown-container">
+                        <button className="toolbar-btn" onClick={() => setShowColumnMenu(!showColumnMenu)}>
+                            <Settings size={14} /> Columns ({table.getVisibleLeafColumns().length})
+                        </button>
+                        {showColumnMenu && (
+                            <div className="column-dropdown">
+                                <label className="col-toggle-all">
+                                    <input type="checkbox" checked={table.getIsAllColumnsVisible()} onChange={table.getToggleAllColumnsVisibilityHandler()} />
+                                    <strong>Toggle All</strong>
+                                </label>
+                                <div className="col-divider"></div>
+                                {table.getAllLeafColumns().map(column => (
+                                    <label key={column.id} className="col-toggle">
+                                        <input type="checkbox" checked={column.getIsVisible()} onChange={column.getToggleVisibilityHandler()} />
+                                        {column.id}
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <button className="toolbar-btn primary" onClick={exportToCSV}><Download size={14} /> Export CSV</button>
+                </div>
             </div>
 
-            {/* Scrollable Container */}
-            <div 
-                className="table-wrapper" 
-                ref={tableContainerRef}
-                style={{ overflow: 'auto', height: '100%' }}
-            >
-                {/* The Virtualizer creates a massive div to fake the scrollbar height */}
+            {/* --- GRID --- */}
+            <div className="table-wrapper" ref={tableContainerRef} style={{ overflow: 'auto', height: '100%' }}>
                 <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
                     <table className="excel-grid">
+
+                        {/* HEADER */}
                         <thead className="sticky-header">
                             {table.getHeaderGroups().map(headerGroup => (
                                 <tr key={headerGroup.id} className="tr header-row">
                                     {headerGroup.headers.map(header => (
-                                        <th 
-                                            key={header.id} 
-                                            className="th"
-                                            style={{ width: header.getSize() }}
-                                            onClick={header.column.getToggleSortingHandler()}
-                                        >
-                                            <div className="th-content">
+                                        <th key={header.id} className="th" style={{ width: header.getSize() }}>
+                                            <div className="th-clickable" onClick={header.column.getToggleSortingHandler()}>
                                                 {flexRender(header.column.columnDef.header, header.getContext())}
-                                                <span>
-                                                    {{
-                                                        asc: ' 🔼',
-                                                        desc: ' 🔽',
-                                                    }[header.column.getIsSorted() as string] ?? null}
+                                                <span className="sort-icon">
+                                                    {{ asc: <ArrowUp size={12} />, desc: <ArrowDown size={12} /> }[header.column.getIsSorted() as string] ?? null}
                                                 </span>
                                             </div>
+
+                                            {/* PRECISION COLUMN FILTERS */}
+                                            {header.column.getCanFilter() ? (
+                                                <div className="th-filter-zone">
+                                                    {clientDataEngine.getSchema()[header.column.id].data_type === 'number' ? (
+                                                        <div className="number-filter">
+                                                            <input
+                                                                type="number" placeholder="Min"
+                                                                value={(header.column.getFilterValue() as [number, number])?.[0] ?? ''}
+                                                                onChange={e => header.column.setFilterValue((old: [number, number]) => [e.target.value, old?.[1]])}
+                                                            />
+                                                            <input
+                                                                type="number" placeholder="Max"
+                                                                value={(header.column.getFilterValue() as [number, number])?.[1] ?? ''}
+                                                                onChange={e => header.column.setFilterValue((old: [number, number]) => [old?.[0], e.target.value])}
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="string-filter">
+                                                            <Filter size={10} className="filter-icon" />
+                                                            <input
+                                                                type="text" placeholder={`Filter ${header.column.id}...`}
+                                                                value={(header.column.getFilterValue() ?? '') as string}
+                                                                onChange={e => header.column.setFilterValue(e.target.value)}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : null}
                                         </th>
                                     ))}
                                 </tr>
                             ))}
                         </thead>
 
+                        {/* BODY */}
                         <tbody>
                             {rowVirtualizer.getVirtualItems().map(virtualRow => {
                                 const row = rows[virtualRow.index];
                                 return (
-                                    <tr 
-                                        key={row.id} 
-                                        className="tr"
-                                        style={{
-                                            height: `${virtualRow.size}px`,
-                                            transform: `translateY(${virtualRow.start}px)`,
-                                            position: 'absolute', // Absolute positioning is key for virtualizer
-                                            top: 0,
-                                            left: 0,
-                                            width: '100%',
-                                        }}
-                                    >
+                                    <tr key={row.id} className="tr"
+                                        style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)`, position: 'absolute', top: 0, left: 0, width: '100%' }}>
                                         {row.getVisibleCells().map(cell => (
-                                            <td 
-                                                key={cell.id} 
-                                                className="td"
-                                                style={{ width: cell.column.getSize() }}
-                                                title={String(cell.getValue())}
-                                            >
-                                                {cell.getValue() === null ? 
-                                                    <span className="null-cell">null</span> : 
-                                                    String(cell.getValue())
-                                                }
+                                            <td key={cell.id} className="td" style={{ width: cell.column.getSize() }} title={String(cell.getValue())}>
+                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                             </td>
                                         ))}
                                     </tr>
                                 );
                             })}
                         </tbody>
+
+                        {/* FOOTER (Aggregations) */}
+                        <tfoot className="sticky-footer">
+                            {table.getFooterGroups().map(footerGroup => (
+                                <tr key={footerGroup.id} className="tr footer-row" style={{ position: 'absolute', bottom: 0, width: '100%' }}>
+                                    {footerGroup.headers.map(header => (
+                                        <td key={header.id} className="td footer-cell" style={{ width: header.getSize() }}>
+                                            {flexRender(header.column.columnDef.footer, header.getContext())}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tfoot>
+
                     </table>
                 </div>
             </div>

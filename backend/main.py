@@ -68,6 +68,7 @@ class AnalyticsBackend:
             'check_data_quality': self.cmd_check_data_quality,    
             'filter_dataset': self.cmd_filter_dataset,   
             'get_dataset_full': self.cmd_get_dataset_full,
+            'run_advanced_analytics': self.cmd_run_advanced_analytics,
         }
         
         for command, handler in handlers.items():
@@ -267,6 +268,103 @@ class AnalyticsBackend:
         """Get cache statistics."""
         return self.registry.get_cache_stats()
     
+    async def cmd_run_advanced_analytics(self, dataset_id: str, analysis_type: str, params: dict) -> Dict[str, Any]:
+        """
+        Runs advanced statistical models like Correlation Matrices and Linear Regression.
+        """
+        import numpy as np
+        import pandas as pd
+        
+        dataset = self.registry.get_dataset(dataset_id)
+        if not dataset:
+            raise ValueError(f"Dataset {dataset_id} not found")
+            
+        df = dataset.get_dataframe_copy()
+
+        # ---------------------------------------------------------
+        # 1. CORRELATION HEATMAP
+        # ---------------------------------------------------------
+        if analysis_type == "correlation":
+            # We only calculate correlation for numeric columns (ignore text/dates)
+            numeric_df = df.select_dtypes(include=[np.number])
+            if numeric_df.empty:
+                raise ValueError("No numeric columns found for correlation.")
+            
+            # Pandas does the heavy math in one line
+            corr_matrix = numeric_df.corr(method='pearson').round(3)
+            
+            # Format the output so our React UI can easily draw a grid
+            heatmap_data = []
+            columns = corr_matrix.columns.tolist()
+            
+            for row_col in columns:
+                for col_col in columns:
+                    val = corr_matrix.loc[row_col, col_col]
+                    # Handle NaN (happens if a column has all the exact same number)
+                    if pd.isna(val): val = 0 
+                    
+                    heatmap_data.append({
+                        "x": col_col,
+                        "y": row_col,
+                        "value": float(val)
+                    })
+                    
+            return {
+                "type": "correlation",
+                "columns": columns,
+                "data": heatmap_data
+            }
+
+        # ---------------------------------------------------------
+        # 2. LINEAR REGRESSION
+        # ---------------------------------------------------------
+        elif analysis_type == "regression":
+            x_col = params.get("x_column")
+            y_col = params.get("y_column")
+            
+            if not x_col or not y_col:
+                raise ValueError("Both X and Y columns are required for regression.")
+                
+            # Drop empty rows so the math doesn't crash
+            clean_df = df[[x_col, y_col]].dropna()
+            if len(clean_df) < 2:
+                raise ValueError("Not enough valid data points for regression.")
+                
+            x = clean_df[x_col].values
+            y = clean_df[y_col].values
+            
+            # Numpy calculates the slope (m) and intercept (b) for y = mx + b
+            slope, intercept = np.polyfit(x, y, 1)
+            
+            # Calculate R-Squared (Accuracy of the line)
+            correlation_matrix = np.corrcoef(x, y)
+            r_squared = correlation_matrix[0, 1] ** 2
+            
+            # Generate the Line of Best Fit points (Start and End of the line)
+            min_x, max_x = float(x.min()), float(x.max())
+            line_points = [
+                {"x": min_x, "y": float(slope * min_x + intercept)},
+                {"x": max_x, "y": float(slope * max_x + intercept)}
+            ]
+            
+            # Sample a maximum of 500 data points for the UI Scatter Plot (to prevent browser lag)
+            scatter_data = clean_df.sample(min(500, len(clean_df))).rename(
+                columns={x_col: "x", y_col: "y"}
+            ).to_dict(orient="records")
+            
+            return {
+                "type": "regression",
+                "equation": f"y = {slope:.4f}x + {intercept:.4f}",
+                "slope": float(slope),
+                "intercept": float(intercept),
+                "r_squared": float(r_squared),
+                "line_points": line_points,
+                "scatter_data": scatter_data
+            }
+            
+        else:
+            raise ValueError(f"Unknown analysis type: {analysis_type}")
+        
     async def cmd_get_dataset_full(self, dataset_id: str, row_limit: int = 10000) -> Dict[str, Any]:
         """
         Fetch entire dataset (up to limit) with schema and stats.
