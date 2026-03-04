@@ -59,6 +59,7 @@ import {
 // ----- NEW: Client‑Side DataExplorer -----
 import { DataExplorer } from '../components/DataExplorer/DataExplorer';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard/AnalyticsDashboard';
+import { AiAssistantWidget } from '../components/common/Apiconnector';
 
 import './App.css';
 
@@ -216,8 +217,33 @@ function App() {
             console.error('Failed to load datasets:', err);
         }
     };
+    const handleDeleteDataset = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation(); // Prevents the row click event from firing
 
-    // ----- Load schema with enhanced features -----
+        if (!window.confirm("Are you sure you want to delete this dataset?")) {
+            return;
+        }
+
+        try {
+            await invoke('call_python_backend', {
+                command: 'remove_dataset',
+                payload: { dataset_id: id }
+            });
+
+
+            if (selectedDataset === id) {
+                setSelectedDataset(null);
+            }
+
+            // Refresh the sidebar list
+            await loadDatasets();
+        } catch (err) {
+            console.error("Failed to delete dataset:", err);
+            // Optional: you can add a toast or alert here
+            alert(`Could not delete dataset: ${err}`);
+        }
+    };
+
     const loadSchema = async (datasetId: string) => {
         try {
             const response = await invoke<any>('call_python_backend', {
@@ -595,16 +621,28 @@ function App() {
                                         className={`dataset-item ${selectedDataset === dataset.id ? 'selected' : ''}`}
                                         onClick={() => setSelectedDataset(dataset.id)}
                                     >
-                                        <div className="dataset-name">
-                                            <File size={16} style={{ marginRight: 8 }} />
-                                            {dataset.name}
+                                        {/* Wrap the text so it stays grouped on the left */}
+                                        <div className="dataset-details">
+                                            <div className="dataset-name">
+                                                <File size={16} style={{ marginRight: 8 }} />
+                                                {dataset.name}
+                                            </div>
+                                            <div className="dataset-meta">
+                                                {dataset.row_count} rows × {dataset.column_count} cols
+                                            </div>
+                                            <div className="dataset-format">
+                                                {dataset.source_format}
+                                            </div>
                                         </div>
-                                        <div className="dataset-meta">
-                                            {dataset.row_count} rows × {dataset.column_count} cols
-                                        </div>
-                                        <div className="dataset-format">
-                                            {dataset.source_format}
-                                        </div>
+
+                                        {/* The button sits on the right */}
+                                        <button
+                                            className="delete-dataset-btn"
+                                            onClick={(e) => handleDeleteDataset(e, dataset.id)}
+                                            title="Delete Dataset"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
                                     </div>
                                 ))
                             )}
@@ -1035,6 +1073,7 @@ function App() {
                     Smart Desktop Analytics v1.0.0
                 </div>
             </footer>
+            <AiAssistantWidget />
         </div>
     );
 }

@@ -933,3 +933,96 @@ tr:hover td {
     transform: rotate(360deg);
   }
 }
+/* --- DATASET ITEM LAYOUT --- */
+.dataset-item {
+    display: flex;
+    justify-content: space-between; /* Pushes button to the far right */
+    align-items: center; /* Centers the button vertically */
+    padding: 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f3f4f6;
+    transition: background-color 0.2s ease;
+}
+
+/* Group the text together */
+.dataset-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1; /* Allows text to take up all available space */
+    overflow: hidden; /* Prevents long names from pushing the button out */
+}
+
+/* --- DELETE BUTTON --- */
+.delete-dataset-btn {
+    flex-shrink: 0; /* Prevents the button from being squished by long text */
+    margin-left: 8px;
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0; /* Hidden until hover */
+    transition: all 0.2s ease;
+}
+
+/* Show button on hover */
+.dataset-item:hover .delete-dataset-btn {
+    opacity: 1;
+}
+
+/* Red highlight when hovering over the trash can */
+.delete-dataset-btn:hover {
+    color: #ef4444;
+    background: #fee2e2;
+}/* --- DATASET ITEM LAYOUT --- */
+.dataset-item {
+    display: flex;
+    justify-content: space-between; /* Pushes button to the far right */
+    align-items: center; /* Centers the button vertically */
+    padding: 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f3f4f6;
+    transition: background-color 0.2s ease;
+}
+
+/* Group the text together */
+.dataset-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1; /* Allows text to take up all available space */
+    overflow: hidden; /* Prevents long names from pushing the button out */
+}
+
+/* --- DELETE BUTTON --- */
+.delete-dataset-btn {
+    flex-shrink: 0; /* Prevents the button from being squished by long text */
+    margin-left: 8px;
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0; /* Hidden until hover */
+    transition: all 0.2s ease;
+}
+
+/* Show button on hover */
+.dataset-item:hover .delete-dataset-btn {
+    opacity: 1;
+}
+
+/* Red highlight when hovering over the trash can */
+.delete-dataset-btn:hover {
+    color: #ef4444;
+    background: #fee2e2;
+}
