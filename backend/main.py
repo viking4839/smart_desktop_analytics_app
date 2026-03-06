@@ -69,6 +69,8 @@ class AnalyticsBackend:
             'filter_dataset': self.cmd_filter_dataset,   
             'get_dataset_full': self.cmd_get_dataset_full,
             'run_advanced_analytics': self.cmd_run_advanced_analytics,
+            # Silent AI context snapshot — fired on dataset selection, costs nothing extra
+            'get_ai_context': self.cmd_get_ai_context,
         }
         
         for command, handler in handlers.items():
@@ -411,6 +413,8 @@ class AnalyticsBackend:
                             "max": float(clean.max()),
                             "mean": float(clean.mean()),
                             "median": float(clean.median()),
+                            "sum": float(clean.sum()),
+                            "non_null_count": int(len(clean)),
                             "q25": float(clean.quantile(0.25)),
                             "q75": float(clean.quantile(0.75)),
                             "std": float(clean.std()),
@@ -711,6 +715,129 @@ class AnalyticsBackend:
             'original_count': len(dataset.get_dataframe_copy())
         }
     
+    # ========== AI Context Snapshot ==========
+
+    async def cmd_get_ai_context(self, dataset_id: str) -> Dict[str, Any]:
+        """
+        Returns a compact, pre-digested context payload for the AI assistant.
+        Fired silently when the user selects a dataset — no extra user action needed.
+        
+        Design goals:
+        - Single round-trip replaces multiple separate calls
+        - All stats already computed by existing methods (zero redundant work)
+        - Payload kept small: top-N values, capped column lists, prose insight bullets
+        """
+        dataset = self.registry.get_dataset(dataset_id)
+        if not dataset:
+            raise ValueError(f"Dataset not found: {dataset_id}")
+
+        df = dataset.get_dataframe_copy()
+
+        # ── 1. Column profiles (replaces sending raw schema to AI) ──
+        col_profiles = []
+        for col_name, col_schema in list(dataset.schema.items())[:40]:  # cap at 40
+            profile: Dict[str, Any] = {
+                "name": col_name,
+                "type": col_schema.data_type if hasattr(col_schema, 'data_type') else str(df[col_name].dtype),
+                "null_pct": round(df[col_name].isnull().mean() * 100, 1),
+            }
+            col_data = df[col_name].dropna()
+            if pd.api.types.is_numeric_dtype(df[col_name]) and not col_data.empty:
+                profile.update({
+                    "min":    round(float(col_data.min()), 4),
+                    "max":    round(float(col_data.max()), 4),
+                    "mean":   round(float(col_data.mean()), 4),
+                    "median": round(float(col_data.median()), 4),
+                    "std":    round(float(col_data.std()), 4),
+                })
+            elif not col_data.empty:
+                top = col_data.value_counts().head(5)
+                profile["top_values"] = {str(k): int(v) for k, v in top.items()}
+                profile["unique_count"] = int(col_data.nunique())
+            col_profiles.append(profile)
+
+        # ── 2. Auto-generated analyst bullets ──
+        # These go directly into the AI system context as "pre-computed insights"
+        bullets: list[str] = []
+
+        # Nulls
+        null_cols = [(c, round(df[c].isnull().mean() * 100, 1)) for c in df.columns if df[c].isnull().any()]
+        null_cols.sort(key=lambda x: -x[1])
+        if null_cols:
+            top_null = null_cols[0]
+            bullets.append(f"{len(null_cols)} columns have missing data; highest is '{top_null[0]}' at {top_null[1]}%")
+
+        # Duplicates
+        dup_count = int(df.duplicated().sum())
+        if dup_count > 0:
+            bullets.append(f"{dup_count} duplicate rows detected ({round(dup_count/len(df)*100,1)}% of data)")
+
+        # Numeric outlier flags (IQR method, quick)
+        num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        outlier_flags = []
+        for col in num_cols[:10]:  # Only check first 10 numeric cols
+            q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)
+            iqr = q3 - q1
+            if iqr > 0:
+                n_out = int(((df[col] < q1 - 1.5 * iqr) | (df[col] > q3 + 1.5 * iqr)).sum())
+                if n_out > 0:
+                    outlier_flags.append(f"'{col}' ({n_out} outliers)")
+        if outlier_flags:
+            bullets.append(f"Potential outliers in: {', '.join(outlier_flags[:4])}")
+
+        # Skewness flags for numeric cols
+        for col in num_cols[:8]:
+            skew = float(df[col].skew())
+            if abs(skew) > 2:
+                direction = "right" if skew > 0 else "left"
+                bullets.append(f"'{col}' is heavily {direction}-skewed (skew={skew:.1f}) — consider log transform")
+            if len(bullets) >= 6:
+                break
+
+        # Cardinality insight for categoricals
+        cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        for col in cat_cols[:5]:
+            nuniq = df[col].nunique()
+            total = len(df)
+            if nuniq == total:
+                bullets.append(f"'{col}' appears to be a unique identifier (all values distinct)")
+            elif nuniq == 2:
+                vals = df[col].dropna().unique().tolist()
+                bullets.append(f"'{col}' is binary: {vals}")
+
+        # Correlation gems (top 3 strongest pairs)
+        if len(num_cols) >= 2:
+            try:
+                corr = df[num_cols].corr().abs()
+                # Get upper triangle only
+                pairs = []
+                for i in range(len(num_cols)):
+                    for j in range(i + 1, len(num_cols)):
+                        val = corr.iloc[i, j]
+                        if not np.isnan(val):
+                            pairs.append((num_cols[i], num_cols[j], round(float(val), 2)))
+                pairs.sort(key=lambda x: -x[2])
+                for a, b, r in pairs[:2]:
+                    if r > 0.6:
+                        bullets.append(f"Strong correlation between '{a}' and '{b}' (r={r})")
+            except Exception:
+                pass
+
+        # ── 3. Quality score (reuse existing method) ──
+        quality = self._calculate_dataset_quality(dataset)
+
+        return {
+            "dataset_id":   dataset_id,
+            "dataset_name": dataset.name,
+            "row_count":    len(df),
+            "col_count":    len(df.columns),
+            "col_profiles": col_profiles,
+            "analyst_bullets": bullets[:8],  # Cap at 8 bullets — keeps token spend low
+            "quality": quality,
+            "numeric_col_names":     num_cols[:20],
+            "categorical_col_names": cat_cols[:20],
+        }
+
     # ========== Lifecycle ==========
     
     async def start(self):

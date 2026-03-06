@@ -160,6 +160,16 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
 
     // --- 4. Virtualizer ---
     const tableContainerRef = useRef<HTMLDivElement>(null);
+    const headerPanelRef = useRef<HTMLDivElement>(null);
+    const footerPanelRef = useRef<HTMLDivElement>(null);
+
+    // Keep header and footer panels horizontally in sync with the body scroll
+    const syncScroll = useCallback(() => {
+        const scrollLeft = tableContainerRef.current?.scrollLeft ?? 0;
+        if (headerPanelRef.current) headerPanelRef.current.scrollLeft = scrollLeft;
+        if (footerPanelRef.current) footerPanelRef.current.scrollLeft = scrollLeft;
+    }, []);
+
     const { rows } = table.getRowModel();
     const rowVirtualizer = useVirtualizer({
         count: rows.length,
@@ -221,13 +231,13 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
                 </div>
             </div>
 
-            {/* --- GRID --- */}
-            <div className="table-wrapper" ref={tableContainerRef} style={{ overflow: 'auto', height: '100%' }}>
-                <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
-                    <table className="excel-grid">
+            {/* --- GRID: three-panel layout so header & footer are truly fixed while body scrolls --- */}
+            <div className="grid-outer">
 
-                        {/* HEADER */}
-                        <thead className="sticky-header">
+                {/* PANEL 1: FIXED HEADER — overflows horizontally but hides scrollbar */}
+                <div className="grid-header-panel" ref={headerPanelRef}>
+                    <table className="excel-grid" style={{ width: table.getTotalSize() }}>
+                        <thead>
                             {table.getHeaderGroups().map(headerGroup => (
                                 <tr key={headerGroup.id} className="tr header-row">
                                     {headerGroup.headers.map(header => (
@@ -238,31 +248,23 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
                                                     {{ asc: <ArrowUp size={12} />, desc: <ArrowDown size={12} /> }[header.column.getIsSorted() as string] ?? null}
                                                 </span>
                                             </div>
-
-                                            {/* PRECISION COLUMN FILTERS */}
                                             {header.column.getCanFilter() ? (
                                                 <div className="th-filter-zone">
                                                     {clientDataEngine.getSchema()[header.column.id].data_type === 'number' ? (
                                                         <div className="number-filter">
-                                                            <input
-                                                                type="number" placeholder="Min"
+                                                            <input type="number" placeholder="Min"
                                                                 value={(header.column.getFilterValue() as [number, number])?.[0] ?? ''}
-                                                                onChange={e => header.column.setFilterValue((old: [number, number]) => [e.target.value, old?.[1]])}
-                                                            />
-                                                            <input
-                                                                type="number" placeholder="Max"
+                                                                onChange={e => header.column.setFilterValue((old: [number, number]) => [e.target.value, old?.[1]])} />
+                                                            <input type="number" placeholder="Max"
                                                                 value={(header.column.getFilterValue() as [number, number])?.[1] ?? ''}
-                                                                onChange={e => header.column.setFilterValue((old: [number, number]) => [old?.[0], e.target.value])}
-                                                            />
+                                                                onChange={e => header.column.setFilterValue((old: [number, number]) => [old?.[0], e.target.value])} />
                                                         </div>
                                                     ) : (
                                                         <div className="string-filter">
                                                             <Filter size={10} className="filter-icon" />
-                                                            <input
-                                                                type="text" placeholder={`Filter ${header.column.id}...`}
+                                                            <input type="text" placeholder={`Filter ${header.column.id}...`}
                                                                 value={(header.column.getFilterValue() ?? '') as string}
-                                                                onChange={e => header.column.setFilterValue(e.target.value)}
-                                                            />
+                                                                onChange={e => header.column.setFilterValue(e.target.value)} />
                                                         </div>
                                                     )}
                                                 </div>
@@ -272,28 +274,38 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
                                 </tr>
                             ))}
                         </thead>
+                    </table>
+                </div>
 
-                        {/* BODY */}
-                        <tbody>
-                            {rowVirtualizer.getVirtualItems().map(virtualRow => {
-                                const row = rows[virtualRow.index];
-                                return (
-                                    <tr key={row.id} className="tr"
-                                        style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)`, position: 'absolute', top: 0, left: 0, width: '100%' }}>
-                                        {row.getVisibleCells().map(cell => (
-                                            <td key={cell.id} className="td" style={{ width: cell.column.getSize() }} title={String(cell.getValue())}>
-                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
+                {/* PANEL 2: SCROLLABLE BODY — the only panel with overflow:auto */}
+                <div className="grid-body-panel" ref={tableContainerRef} onScroll={syncScroll}>
+                    <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: table.getTotalSize(), position: 'relative' }}>
+                        <table className="excel-grid" style={{ width: table.getTotalSize() }}>
+                            <tbody>
+                                {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                                    const row = rows[virtualRow.index];
+                                    return (
+                                        <tr key={row.id} className="tr"
+                                            style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)`, position: 'absolute', top: 0, left: 0, width: '100%' }}>
+                                            {row.getVisibleCells().map(cell => (
+                                                <td key={cell.id} className="td" style={{ width: cell.column.getSize() }} title={String(cell.getValue())}>
+                                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
 
-                        {/* FOOTER (Aggregations) */}
-                        <tfoot className="sticky-footer">
+                {/* PANEL 3: FIXED FOOTER — mirrors header panel, hides its own scrollbar */}
+                <div className="grid-footer-panel" ref={footerPanelRef}>
+                    <table className="excel-grid" style={{ width: table.getTotalSize() }}>
+                        <tfoot>
                             {table.getFooterGroups().map(footerGroup => (
-                                <tr key={footerGroup.id} className="tr footer-row" style={{ position: 'absolute', bottom: 0, width: '100%' }}>
+                                <tr key={footerGroup.id} className="tr footer-row">
                                     {footerGroup.headers.map(header => (
                                         <td key={header.id} className="td footer-cell" style={{ width: header.getSize() }}>
                                             {flexRender(header.column.columnDef.footer, header.getContext())}
@@ -302,9 +314,9 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
                                 </tr>
                             ))}
                         </tfoot>
-
                     </table>
                 </div>
+
             </div>
         </div>
     );

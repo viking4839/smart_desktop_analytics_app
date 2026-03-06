@@ -119,60 +119,105 @@
     overflow: hidden;
 }
 
-/* --- GRID BASE & ALIGNMENT FIXES --- */
-.table-wrapper {
+/* --- GRID: THREE-PANEL LAYOUT ---
+   Header and footer panels are fixed height with overflow:hidden (no scrollbar visible).
+   Body panel has overflow:auto and syncs its scrollLeft to the other two via JS.
+   This is the only reliable pattern when using a row virtualizer.
+------------------------------------- */
+.grid-outer {
     flex: 1;
-    background: #fff;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* Clip everything — children manage their own scroll */
+    min-height: 0;
+    /* Critical: lets flex children shrink below content height */
+}
+
+/* Header panel: fixed, never scrolls vertically, hides horizontal scrollbar */
+.grid-header-panel {
+    flex-shrink: 0;
+    overflow: hidden;
+    /* Hides scrollbar; scrollLeft is set by JS */
+    background: #f1f3f4;
+    border-bottom: 2px solid #ccc;
+    z-index: 10;
+}
+
+/* Body panel: the ONLY scrolling element */
+.grid-body-panel {
+    flex: 1;
+    overflow: auto;
+    /* Both axes scroll here */
+    min-height: 0;
+}
+
+/* Footer panel: fixed, never scrolls vertically, hides horizontal scrollbar */
+.grid-footer-panel {
+    flex-shrink: 0;
+    overflow: hidden;
+    /* Hides scrollbar; scrollLeft is set by JS */
+    background: #f8f9fa;
+    border-top: 2px solid #ccc;
+    z-index: 10;
 }
 
 .excel-grid {
-    display: block;
-    width: 100%;
-    /* Now safely takes the width of table.getTotalSize() */
+    display: table;
     border-collapse: collapse;
+    table-layout: fixed;
+    /* Columns honour explicit width values */
 }
 
-.sticky-header,
-.sticky-footer,
+thead,
+tfoot {
+    display: table-header-group;
+}
+
 tbody {
-    display: block;
-    width: 100%;
+    display: table-row-group;
+    position: relative;
 }
 
-.sticky-header {
-    position: sticky;
+/* Header/footer rows use the real table-row model */
+.header-row,
+.footer-row {
+    display: table-row !important;
+}
+
+/* Body rows are virtualised — they use absolute positioning inside a flex row */
+tbody .tr {
+    display: flex;
+    position: absolute;
     top: 0;
-    z-index: 200;
-    /* Stays above scrolling rows */
-    background: #f1f3f4;
-}
-
-.sticky-footer {
-    position: sticky;
-    bottom: 0;
-    z-index: 50;
-    /* Stays above scrolling rows */
-    background: #f8f9fa;
+    left: 0;
 }
 
 .tr {
-    display: flex;
-    width: 100%;
     background: #ffffff;
-    z-index: 1;
 }
 
 .tr:hover {
     background: #f8f9fa;
 }
 
-/* CRITICAL FIX: box-sizing ensures padding doesn't break inline widths */
+/* Header/footer cells sit inside real table-rows */
 .th,
-.td {
+tfoot .td {
+    display: table-cell;
+    box-sizing: border-box;
+    padding: 8px;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 13px;
+    vertical-align: top;
+}
+
+/* Body cells sit inside virtualised flex rows */
+tbody .td {
     display: block;
     flex: 0 0 auto;
     box-sizing: border-box;
-    /* Crucial for perfect alignment */
     padding: 8px;
     border-right: 1px solid #e5e7eb;
     border-bottom: 1px solid #e5e7eb;
@@ -186,7 +231,9 @@ tbody {
     background: #f1f3f4;
     font-weight: 600;
     text-align: left;
-    border-bottom: 2px solid #ccc;
+    /* No overflow:hidden — quality bar, filters, dropdowns must not be clipped */
+    overflow: visible;
+    white-space: normal;
 }
 
 

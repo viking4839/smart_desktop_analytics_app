@@ -1073,7 +1073,16 @@ function App() {
                     Smart Desktop Analytics v1.0.0
                 </div>
             </footer>
-            <AiAssistantWidget />
+            <AiAssistantWidget
+                datasets={datasets}
+                selectedDatasetId={selectedDataset}
+                currentResult={result}
+                availableColumns={availableColumns}
+                quickInsights={quickInsights}
+                suggestedQueries={suggestedQueries}
+                qualityScore={qualityScore}
+
+            />
         </div>
     );
 }
