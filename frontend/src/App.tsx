@@ -60,7 +60,7 @@ import {
 import { DataExplorer } from '../components/DataExplorer/DataExplorer';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard/AnalyticsDashboard';
 import { AiAssistantWidget } from '../components/common/Apiconnector';
-
+import  ERDView  from '../components/ERD/ERDView';
 import './App.css';
 
 // ----- All existing TypeScript interfaces (unchanged) -----
@@ -914,9 +914,18 @@ function App() {
                             <Activity size={16} />
                             Analytics & Charts
                         </button>
+                        <button
+                            className={`tab-btn ${activeRightTab === 'erd' ? 'active' : ''}`}
+                            onClick={() => setActiveRightTab('erd')}
+                        >
+                            <Activity size={16} />
+                            ERD
+                        </button>
                     </div>
 
                     <div className="tab-content">
+
+
                         {activeRightTab === 'results' && (
                             /* ----- Results Panel ----- */
                             <div className="panel-section">
@@ -965,6 +974,7 @@ function App() {
                                                 </div>
                                             </div>
                                         )}
+
 
                                         {/* Table */}
                                         {result.table && (
@@ -1052,6 +1062,16 @@ function App() {
                                 )}
                             </div>
                         )}
+
+                        {activeRightTab === 'erd' && (
+                            <div className="panel-section erd-wrapper">
+                                <ERDView
+                                    datasets={datasets}
+                                    selectedDatasetId={selectedDataset}
+                                />
+                            </div>
+                        )}
+
                     </div>
                 </div>
             </div>

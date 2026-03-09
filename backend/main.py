@@ -216,18 +216,24 @@ class AnalyticsBackend:
                 "types": {col: str(dtype) for col, dtype in df_preview.dtypes.items()}
             }
         }
-    async def cmd_analyze_erd_relationships(self, anchor_id: str, new_id: str) -> Dict[str, Any]:
+    async def cmd_analyze_erd_relationships(self, anchor_dataset_id: str, new_dataset_id: str) -> Dict[str, Any]:
         """Analyze potential relationships between two datasets for ERD suggestions."""
+        
+        # 1. Fetch Anchor Dataset
         anchor_dataset = self.registry.get_dataset(anchor_dataset_id)
         if not anchor_dataset:
             raise ValueError(f"Anchor dataset not found: {anchor_dataset_id}")
+            
+        # 2. Fetch New Dataset
         new_dataset = self.registry.get_dataset(new_dataset_id)
         if not new_dataset:
             raise ValueError(f"New dataset not found: {new_dataset_id}")
         
+        # 3. Get Pandas DataFrames
         anchor_df = anchor_dataset.get_dataframe_copy()
         new_df = new_dataset.get_dataframe_copy()
         
+        # 4. Run your ERD Engine
         relationships = analyze_relationships(
             anchor_df=anchor_df,
             new_df=new_df,
@@ -235,10 +241,11 @@ class AnalyticsBackend:
             new_name=new_dataset.name
         )
         
+        # 5. Return exact payload expected by ERDView.tsx
         return {
             "anchor_dataset_id": anchor_dataset_id,
-         "new_dataset_id": new_dataset_id,
-         "relationships": relationships
+            "new_dataset_id": new_dataset_id,
+            "relationships": relationships
         }
     async def cmd_get_schema(self, dataset_id: str) -> Dict[str, Any]:
         """Get detailed schema with statistics and auto-suggestions."""
