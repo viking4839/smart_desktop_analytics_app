@@ -110,7 +110,7 @@
 
 /* --- GRID BASE & ALIGNMENT FIXES --- */
 .data-explorer-container {
-    height: 100%;
+    height: 600%;
     display: flex;
     flex-direction: column;
     background: #fff;
@@ -422,3 +422,26 @@ tbody .td {
         transform: rotate(360deg);
     }
 }
+
+/* --- DRAG-TO-SCROLL --- */
+
+/* Kill text selection while dragging — works across all browsers */
+.grid-body-panel.is-dragging,
+.grid-body-panel.is-dragging * {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Restore pointer cursor on cells that contain interactive elements */
+.grid-body-panel input,
+.grid-body-panel button,
+.grid-body-panel label,
+.grid-body-panel select {
+    cursor: default;
+}
+
+/* Restore text cursor inside filter inputs in the header */
+.grid-header-panel input {
+    cursor: text;
+}
+

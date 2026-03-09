@@ -256,8 +256,26 @@ export const AiAssistantWidget: React.FC<AiAssistantWidgetProps> = ({
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
     const [showKeySettings, setShowKeySettings] = useState(() => !localStorage.getItem('gemini_api_key'));
     const [prompt, setPrompt] = useState('');
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [streamedText, setStreamedText] = useState('');
+    const [historyMap, setHistoryMap] = useState<Record<string, ChatMessage[]>>(() => {
+        try {
+            const saved = localStorage.getItem('smart_ai_chat_history');
+            return saved ? JSON.parse(saved) : {};
+        } catch { return {}; }
+    });
+    const activeId = selectedDatasetId || 'global';
+    const messages = historyMap[activeId] || [];
+    const setMessages = useCallback((action: React.SetStateAction<ChatMessage[]>) => {
+        setHistoryMap(prevMap => {
+            const currentMsgs = prevMap[activeId] || [];
+            const nextMsgs = typeof action === 'function' ? action(currentMsgs) : action;
+
+            const newMap = { ...prevMap, [activeId]: nextMsgs };
+            // Save to memory so it survives app restarts
+            localStorage.setItem('smart_ai_chat_history', JSON.stringify(newMap));
+            return newMap;
+        });
+    }, [activeId]);
     const [loading, setLoading] = useState(false);
     const [copied, setCopied] = useState(false);
 
@@ -267,7 +285,7 @@ export const AiAssistantWidget: React.FC<AiAssistantWidgetProps> = ({
 
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, streamedText]);
     useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 150); }, [isOpen]);
-    useEffect(() => { setMessages([]); setStreamedText(''); }, [selectedDatasetId]);
+    useEffect(() => { setStreamedText(''); }, [selectedDatasetId]);
 
     const suggestions = buildSuggestions(activeDataset, currentResult, qualityScore, availableColumns);
 

@@ -170,6 +170,44 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
         if (footerPanelRef.current) footerPanelRef.current.scrollLeft = scrollLeft;
     }, []);
 
+    // --- Horizontal drag-to-scroll ---
+    const [isDragging, setIsDragging] = useState(false);
+
+    const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        // Ignore clicks on interactive elements (filter inputs, buttons, etc.)
+        const tag = (e.target as HTMLElement).tagName.toLowerCase();
+        if (['input', 'button', 'label', 'select', 'textarea'].includes(tag)) return;
+
+        const el = tableContainerRef.current;
+        if (!el) return;
+
+        const startX    = e.pageX;
+        const startLeft = el.scrollLeft;
+        let   didDrag   = false;
+
+        setIsDragging(true);
+
+        const onMouseMove = (mv: MouseEvent) => {
+            const dx = mv.pageX - startX;
+            if (Math.abs(dx) > 3) didDrag = true; // dead-zone: ignore tiny jitters
+            el.scrollLeft = startLeft - dx;
+            syncScroll();                          // keep header/footer in sync during drag
+        };
+
+        const onMouseUp = () => {
+            setIsDragging(false);
+            document.removeEventListener('mousemove', onMouseMove);
+            // Suppress the click that fires after drag so column sort doesn't trigger
+            if (didDrag) {
+                const suppressClick = (ce: MouseEvent) => ce.stopPropagation();
+                document.addEventListener('click', suppressClick, { capture: true, once: true });
+            }
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp, { once: true });
+    }, [syncScroll]);
+
     const { rows } = table.getRowModel();
     const rowVirtualizer = useVirtualizer({
         count: rows.length,
@@ -278,7 +316,7 @@ export const DataExplorer: React.FC<DataExplorerProps> = ({ datasetId }) => {
                 </div>
 
                 {/* PANEL 2: SCROLLABLE BODY — the only panel with overflow:auto */}
-                <div className="grid-body-panel" ref={tableContainerRef} onScroll={syncScroll}>
+                <div ref={tableContainerRef} onScroll={syncScroll} onMouseDown={handleMouseDown} style={{ cursor: isDragging ? 'grabbing' : 'grab' }} className={`grid-body-panel${isDragging ? ' is-dragging' : ''}`}>
                     <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: table.getTotalSize(), position: 'relative' }}>
                         <table className="excel-grid" style={{ width: table.getTotalSize() }}>
                             <tbody>

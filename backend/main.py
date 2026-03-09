@@ -19,7 +19,7 @@ from core.dataset import Dataset
 from core.query_model import Query
 from core.registry import DataRegistry
 from data_io.ingestor import DataIngestor
-
+from core.erd_engine import analyze_relationships
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -71,6 +71,7 @@ class AnalyticsBackend:
             'run_advanced_analytics': self.cmd_run_advanced_analytics,
             # Silent AI context snapshot — fired on dataset selection, costs nothing extra
             'get_ai_context': self.cmd_get_ai_context,
+            'analyze_erd_relationships': self.cmd_analyze_erd_relationships,
         }
         
         for command, handler in handlers.items():
@@ -215,7 +216,30 @@ class AnalyticsBackend:
                 "types": {col: str(dtype) for col, dtype in df_preview.dtypes.items()}
             }
         }
-    
+    async def cmd_analyze_erd_relationships(self, anchor_id: str, new_id: str) -> Dict[str, Any]:
+        """Analyze potential relationships between two datasets for ERD suggestions."""
+        anchor_dataset = self.registry.get_dataset(anchor_dataset_id)
+        if not anchor_dataset:
+            raise ValueError(f"Anchor dataset not found: {anchor_dataset_id}")
+        new_dataset = self.registry.get_dataset(new_dataset_id)
+        if not new_dataset:
+            raise ValueError(f"New dataset not found: {new_dataset_id}")
+        
+        anchor_df = anchor_dataset.get_dataframe_copy()
+        new_df = new_dataset.get_dataframe_copy()
+        
+        relationships = analyze_relationships(
+            anchor_df=anchor_df,
+            new_df=new_df,
+            anchor_name=anchor_dataset.name,
+            new_name=new_dataset.name
+        )
+        
+        return {
+            "anchor_dataset_id": anchor_dataset_id,
+         "new_dataset_id": new_dataset_id,
+         "relationships": relationships
+        }
     async def cmd_get_schema(self, dataset_id: str) -> Dict[str, Any]:
         """Get detailed schema with statistics and auto-suggestions."""
         if not dataset_id:
