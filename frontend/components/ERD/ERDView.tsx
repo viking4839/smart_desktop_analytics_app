@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
-import { Link, Loader, AlertCircle } from 'lucide-react';
+import {
+    Link,
+    Loader,
+    AlertCircle,
+    Eye,
+    Code,
+    Lightbulb,
+    CheckCircle,
+    XCircle,
+    AlertTriangle,
+    GitBranch,
+    Layers,
+    
+} from 'lucide-react';
 import './ERDView.css';
 
 interface Dataset {
@@ -17,24 +30,84 @@ interface Relationship {
     new_column: string;
     confidence_score: number;
     reasons: string[];
+    metadata?: {
+        overlap_percentage?: number;
+        cardinality?: string;
+        matched_values?: number;
+        total_values?: number;
+    };
+    relationship_type?: 'single_column' | 'composite';
+    pk_quality_score?: number;
+}
+
+interface JoinPreview {
+    preview: {
+        columns: string[];
+        rows: any[];
+    };
+    quality: {
+        total_new_rows: number;
+        matched_rows: number;
+        orphan_rows: number;
+        orphan_percentage: number;
+        match_percentage: number;
+        anchor_key_unique: boolean;
+        anchor_duplicate_keys: number;
+        cardinality: string;
+    };
+    warnings: string[];
+}
+
+interface SchemaImprovement {
+    type: string;
+    column: string;
+    reason: string;
+    confidence: string;
+    action: string;
+    metadata?: any;
 }
 
 interface Props {
     datasets: Dataset[];
-    selectedDatasetId?: string; // optional preselected anchor
+    selectedDatasetId?: string;
 }
 
 const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
+    // Selection state
     const [anchorDatasetId, setAnchorDatasetId] = useState<string>(selectedDatasetId || '');
     const [newDatasetId, setNewDatasetId] = useState<string>('');
+
+    // Results state
     const [relationships, setRelationships] = useState<Relationship[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string>('');
 
-    // Clear results when either selection changes
+    // Advanced features state
+    const [previewData, setPreviewData] = useState<JoinPreview | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null);
+
+    const [sqlCode, setSqlCode] = useState<string>('');
+    const [showSqlModal, setShowSqlModal] = useState(false);
+
+    const [improvements, setImprovements] = useState<SchemaImprovement[]>([]);
+    const [showImprovements, setShowImprovements] = useState(false);
+
+    const [lineagePaths, setLineagePaths] = useState<string[][]>([]);
+    const [showLineage, setShowLineage] = useState(false);
+
+    const [includeComposites, setIncludeComposites] = useState(true);
+    const [activeTab, setActiveTab] = useState<'relationships' | 'improvements' | 'lineage'>('relationships');
+
+    // Clear results when selection changes
     useEffect(() => {
         setRelationships([]);
+        setPreviewData(null);
+        setSelectedRelationship(null);
+        setSqlCode('');
     }, [anchorDatasetId, newDatasetId]);
+
+    // ========== Core Functions ==========
 
     const findRelationships = async () => {
         if (!anchorDatasetId || !newDatasetId) {
@@ -50,7 +123,8 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                 command: 'analyze_erd_relationships',
                 payload: {
                     anchor_dataset_id: anchorDatasetId,
-                    new_dataset_id: newDatasetId
+                    new_dataset_id: newDatasetId,
+                    include_composites: includeComposites
                 }
             });
             setRelationships(response.relationships || []);
@@ -61,53 +135,225 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
         }
     };
 
+    const previewJoin = async (rel: Relationship) => {
+        setSelectedRelationship(rel);
+        setPreviewLoading(true);
+        setPreviewData(null);
+
+        try {
+            const response = await invoke<JoinPreview>('call_python_backend', {
+                command: 'preview_join',
+                payload: {
+                    anchor_dataset_id: anchorDatasetId,
+                    new_dataset_id: newDatasetId,
+                    anchor_column: rel.anchor_column,
+                    new_column: rel.new_column,
+                    limit: 20
+                }
+            });
+            setPreviewData(response);
+        } catch (err: any) {
+            setError(err.message || 'Failed to preview join');
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const generateSQL = async (rels: Relationship[], joinType: string = 'LEFT') => {
+        try {
+            const response = await invoke<any>('call_python_backend', {
+                command: 'generate_join_sql',
+                payload: {
+                    relationships: rels,
+                    join_type: joinType
+                }
+            });
+            setSqlCode(response.sql_query);
+            setShowSqlModal(true);
+        } catch (err: any) {
+            setError(err.message || 'Failed to generate SQL');
+        }
+    };
+
+    const getSuggestedImprovements = async (datasetId: string) => {
+        try {
+            const response = await invoke<any>('call_python_backend', {
+                command: 'suggest_schema_improvements',
+                payload: {
+                    dataset_id: datasetId
+                }
+            });
+            setImprovements(response.suggestions || []);
+            setShowImprovements(true);
+        } catch (err: any) {
+            setError(err.message || 'Failed to get suggestions');
+        }
+    };
+
+    const findLineage = async () => {
+        if (!anchorDatasetId || !newDatasetId) {
+            setError('Please select both datasets');
+            return;
+        }
+
+        try {
+            const response = await invoke<any>('call_python_backend', {
+                command: 'find_data_lineage',
+                payload: {
+                    start_dataset_id: anchorDatasetId,
+                    end_dataset_id: newDatasetId
+                }
+            });
+            setLineagePaths(response.paths || []);
+            setShowLineage(true);
+        } catch (err: any) {
+            setError(err.message || 'Failed to find lineage');
+        }
+    };
+
+    // ========== UI Helpers ==========
+
+    const getConfidenceColor = (score: number): string => {
+        if (score > 80) return '#10b981';
+        if (score > 50) return '#f59e0b';
+        return '#ef4444';
+    };
+
+    const getCardinalityIcon = (cardinality?: string) => {
+        switch (cardinality) {
+            case '1:1': return '⟷';
+            case '1:N': return '→';
+            case 'N:1': return '←';
+            case 'M:N': return '⟺';
+            default: return '→';
+        }
+    };
+
     return (
         <div className="erd-view">
-            <h2>Entity Relationship Diagram</h2>
-            <p>Select two datasets to find possible Primary Key / Foreign Key links.</p>
-
-            <div className="erd-controls">
-                <div className="control-group">
-                    <label>Anchor Dataset (PK side):</label>
-                    <select
-                        value={anchorDatasetId}
-                        onChange={(e) => setAnchorDatasetId(e.target.value)}
-                        className="column-select"
-                    >
-                        <option value="">Select anchor dataset</option>
-                        {datasets.map(d => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                    </select>
+            {/* Header */}
+            <div className="erd-header">
+                <div>
+                    <h2><Link size={24} /> Entity Relationship Analyzer</h2>
+                    <p>Discover relationships, preview joins, and optimize your schema</p>
                 </div>
+            </div>
 
-                <div className="control-group">
-                    <label>Dataset to compare (FK side):</label>
-                    <select
-                        value={newDatasetId}
-                        onChange={(e) => setNewDatasetId(e.target.value)}
-                        className="column-select"
-                    >
-                        <option value="">Select dataset</option>
-                        {datasets
-                            .filter(d => d.id !== anchorDatasetId)
-                            .map(d => (
-                                <option key={d.id} value={d.id}>{d.name}</option>
-                            ))
-                        }
-                    </select>
-                </div>
-
+            {/* Tab Navigation */}
+            <div className="erd-tabs">
                 <button
-                    onClick={findRelationships}
-                    disabled={loading || !anchorDatasetId || !newDatasetId}
-                    className="execute-btn"
+                    className={activeTab === 'relationships' ? 'active' : ''}
+                    onClick={() => setActiveTab('relationships')}
                 >
-                    {loading ? <Loader size={16} className="spin" /> : <Link size={16} />}
-                    {loading ? 'Analyzing...' : 'Find Relationships'}
+                    <Link size={16} /> Relationships
+                </button>
+                <button
+                    className={activeTab === 'improvements' ? 'active' : ''}
+                    onClick={() => setActiveTab('improvements')}
+                >
+                    <Lightbulb size={16} /> Improvements
+                </button>
+                <button
+                    className={activeTab === 'lineage' ? 'active' : ''}
+                    onClick={() => setActiveTab('lineage')}
+                >
+                    <GitBranch size={16} /> Data Lineage
                 </button>
             </div>
 
+            {/* Controls */}
+            <div className="erd-controls">
+                <div className="control-row">
+                    <div className="control-group">
+                        <label>Anchor Dataset (PK side):</label>
+                        <select
+                            value={anchorDatasetId}
+                            onChange={(e) => setAnchorDatasetId(e.target.value)}
+                            className="column-select"
+                        >
+                            <option value="">Select anchor dataset</option>
+                            {datasets.map(d => (
+                                <option key={d.id} value={d.id}>
+                                    {d.name} ({d.row_count.toLocaleString()} rows)
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="control-group">
+                        <label>Dataset to compare (FK side):</label>
+                        <select
+                            value={newDatasetId}
+                            onChange={(e) => setNewDatasetId(e.target.value)}
+                            className="column-select"
+                        >
+                            <option value="">Select dataset</option>
+                            {datasets
+                                .filter(d => d.id !== anchorDatasetId)
+                                .map(d => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.name} ({d.row_count.toLocaleString()} rows)
+                                    </option>
+                                ))
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div className="control-actions">
+                    <label className="checkbox-label">
+                        <input
+                            type="checkbox"
+                            checked={includeComposites}
+                            onChange={(e) => setIncludeComposites(e.target.checked)}
+                        />
+                        Include composite keys
+                    </label>
+
+                    {activeTab === 'relationships' && (
+                        <>
+                            <button
+                                onClick={findRelationships}
+                                disabled={loading || !anchorDatasetId || !newDatasetId}
+                                className="execute-btn primary"
+                            >
+                                {loading ? <Loader size={16} className="spin" /> : <Link size={16} />}
+                                {loading ? 'Analyzing...' : 'Find Relationships'}
+                            </button>
+
+                            {relationships.length > 0 && (
+                                <button
+                                    onClick={() => generateSQL(relationships, 'LEFT')}
+                                    className="execute-btn secondary"
+                                >
+                                    <Code size={16} /> Generate SQL
+                                </button>
+                            )}
+                        </>
+                    )}
+
+                    {activeTab === 'improvements' && anchorDatasetId && (
+                        <button
+                            onClick={() => getSuggestedImprovements(anchorDatasetId)}
+                            className="execute-btn primary"
+                        >
+                            <Lightbulb size={16} /> Get Suggestions
+                        </button>
+                    )}
+
+                    {activeTab === 'lineage' && (
+                        <button
+                            onClick={findLineage}
+                            disabled={!anchorDatasetId || !newDatasetId}
+                            className="execute-btn primary"
+                        >
+                            <GitBranch size={16} /> Find Paths
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Error Display */}
             {error && (
                 <div className="error-message">
                     <AlertCircle size={16} />
@@ -115,42 +361,266 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                 </div>
             )}
 
-            {relationships.length > 0 && (
-                <div className="erd-results">
-                    <h3>Suggested Relationships</h3>
-                    <div className="relationships-list">
-                        {relationships.map((rel, idx) => (
-                            <div key={idx} className="relationship-item">
-                                <div className="relationship-header">
-                                    <span className="anchor-col">{rel.anchor_dataset}.{rel.anchor_column}</span>
-                                    <span className="arrow">→</span>
-                                    <span className="new-col">{rel.new_dataset}.{rel.new_column}</span>
-                                    <div
-                                        className="confidence-badge"
-                                        style={{
-                                            backgroundColor:
-                                                rel.confidence_score > 80 ? '#10b981' :
-                                                rel.confidence_score > 50 ? '#f59e0b' : '#ef4444'
-                                        }}
-                                    >
-                                        {rel.confidence_score}%
+            {/* Tab Content */}
+            {activeTab === 'relationships' && (
+                <div className="tab-content">
+                    {relationships.length > 0 && (
+                        <div className="erd-results">
+                            <h3>Suggested Relationships ({relationships.length})</h3>
+                            <div className="relationships-list">
+                                {relationships.map((rel, idx) => (
+                                    <div key={idx} className="relationship-item">
+                                        <div className="relationship-header">
+                                            <div className="relationship-main">
+                                                <span className="anchor-col">{rel.anchor_dataset}.{rel.anchor_column}</span>
+                                                <span className="arrow">{getCardinalityIcon(rel.metadata?.cardinality)}</span>
+                                                <span className="new-col">{rel.new_dataset}.{rel.new_column}</span>
+                                            </div>
+
+                                            <div className="relationship-actions">
+                                                <div
+                                                    className="confidence-badge"
+                                                    style={{ backgroundColor: getConfidenceColor(rel.confidence_score) }}
+                                                >
+                                                    {rel.confidence_score}%
+                                                </div>
+
+                                                <button
+                                                    className="icon-btn"
+                                                    onClick={() => previewJoin(rel)}
+                                                    title="Preview Join"
+                                                >
+                                                    <Eye size={16} />
+                                                </button>
+
+                                                <button
+                                                    className="icon-btn"
+                                                    onClick={() => generateSQL([rel], 'LEFT')}
+                                                    title="Generate SQL"
+                                                >
+                                                    <Code size={16} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="relationship-meta">
+                                            {rel.relationship_type === 'composite' && (
+                                                <span className="meta-badge composite">Composite Key</span>
+                                            )}
+                                            {rel.metadata?.cardinality && (
+                                                <span className="meta-badge">{rel.metadata.cardinality}</span>
+                                            )}
+                                            {rel.metadata?.overlap_percentage && (
+                                                <span className="meta-badge">
+                                                    {rel.metadata.overlap_percentage.toFixed(1)}% overlap
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="relationship-reasons">
+                                            {rel.reasons.map((reason, i) => (
+                                                <span key={i} className="reason-tag">{reason}</span>
+                                            ))}
+                                        </div>
                                     </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {relationships.length === 0 && !loading && !error && anchorDatasetId && newDatasetId && (
+                        <div className="empty-state">
+                            <Link size={48} strokeWidth={1.5} />
+                            <p>No relationships found between these datasets</p>
+                            <small>Try selecting different datasets or enable composite keys</small>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeTab === 'improvements' && (
+                <div className="tab-content">
+                    {showImprovements && improvements.length > 0 && (
+                        <div className="improvements-list">
+                            <h3>Schema Improvement Suggestions</h3>
+                            {improvements.map((imp, idx) => (
+                                <div key={idx} className="improvement-item">
+                                    <div className="improvement-header">
+                                        <Lightbulb size={18} color="#f59e0b" />
+                                        <strong>{imp.action}</strong>
+                                        <span className={`confidence-tag ${imp.confidence}`}>
+                                            {imp.confidence}
+                                        </span>
+                                    </div>
+                                    <p className="improvement-reason">{imp.reason}</p>
+                                    <div className="improvement-type">{imp.type}</div>
                                 </div>
-                                <div className="relationship-reasons">
-                                    {rel.reasons.map((reason, i) => (
-                                        <span key={i} className="reason-tag">{reason}</span>
+                            ))}
+                        </div>
+                    )}
+
+                    {!showImprovements && (
+                        <div className="empty-state">
+                            <Lightbulb size={48} strokeWidth={1.5} />
+                            <p>Select a dataset and click "Get Suggestions"</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeTab === 'lineage' && (
+                <div className="tab-content">
+                    {showLineage && lineagePaths.length > 0 && (
+                        <div className="lineage-results">
+                            <h3>Data Lineage Paths ({lineagePaths.length})</h3>
+                            {lineagePaths.map((path, idx) => (
+                                <div key={idx} className="lineage-path">
+                                    <span className="path-number">Path {idx + 1}:</span>
+                                    {path.map((node, nodeIdx) => (
+                                        <React.Fragment key={nodeIdx}>
+                                            <span className="path-node">{node}</span>
+                                            {nodeIdx < path.length - 1 && (
+                                                <span className="path-arrow">→</span>
+                                            )}
+                                        </React.Fragment>
                                     ))}
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
+                    )}
+
+                    {showLineage && lineagePaths.length === 0 && (
+                        <div className="empty-state">
+                            <GitBranch size={48} strokeWidth={1.5} />
+                            <p>No lineage path found between these datasets</p>
+                            <small>They may not be related through any common columns</small>
+                        </div>
+                    )}
+
+                    {!showLineage && (
+                        <div className="empty-state">
+                            <GitBranch size={48} strokeWidth={1.5} />
+                            <p>Select two datasets and click "Find Paths"</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Join Preview Modal */}
+            {selectedRelationship && (
+                <div className="modal-overlay" onClick={() => setSelectedRelationship(null)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>
+                                <Eye size={20} /> Join Preview
+                            </h3>
+                            <button
+                                className="modal-close"
+                                onClick={() => setSelectedRelationship(null)}
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="modal-body">
+                            {previewLoading && (
+                                <div className="loading-center">
+                                    <Loader size={24} className="spin" />
+                                    <p>Analyzing join...</p>
+                                </div>
+                            )}
+
+                            {previewData && (
+                                <>
+                                    {/* Quality Metrics */}
+                                    <div className="quality-metrics">
+                                        <h4>Join Quality</h4>
+                                        <div className="metrics-grid">
+                                            <div className="metric">
+                                                <CheckCircle size={16} color="#10b981" />
+                                                <span>Matched: {previewData.quality.matched_rows} / {previewData.quality.total_new_rows}</span>
+                                                <strong>{previewData.quality.match_percentage.toFixed(1)}%</strong>
+                                            </div>
+                                            <div className="metric">
+                                                <XCircle size={16} color="#ef4444" />
+                                                <span>Orphans: {previewData.quality.orphan_rows}</span>
+                                                <strong>{previewData.quality.orphan_percentage.toFixed(1)}%</strong>
+                                            </div>
+                                            <div className="metric">
+                                                <Layers size={16} color="#6366f1" />
+                                                <span>Cardinality:</span>
+                                                <strong>{previewData.quality.cardinality}</strong>
+                                            </div>
+                                        </div>
+
+                                        {/* Warnings */}
+                                        {previewData.warnings.length > 0 && (
+                                            <div className="warnings-section">
+                                                {previewData.warnings.map((warning, i) => (
+                                                    <div key={i} className="warning-item">
+                                                        <AlertTriangle size={14} />
+                                                        {warning}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Preview Table */}
+                                    <div className="preview-table-wrapper">
+                                        <h4>Sample Data (first 20 rows)</h4>
+                                        <table className="preview-table">
+                                            <thead>
+                                                <tr>
+                                                    {previewData.preview.columns.map((col) => (
+                                                        <th key={col}>{col}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {previewData.preview.rows.map((row, i) => (
+                                                    <tr key={i}>
+                                                        {previewData.preview.columns.map((col) => (
+                                                            <td key={col}>
+                                                                {row[col] !== null && row[col] !== undefined
+                                                                    ? String(row[col])
+                                                                    : <span className="null-value">null</span>
+                                                                }
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
 
-            {relationships.length === 0 && !loading && !error && (
-                <div className="empty-state">
-                    <Link size={48} strokeWidth={1.5} />
-                    <p>No relationships found. Try different datasets.</p>
+            {/* SQL Modal */}
+            {showSqlModal && (
+                <div className="modal-overlay" onClick={() => setShowSqlModal(false)}>
+                    <div className="modal-content sql-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3><Code size={20} /> Generated SQL</h3>
+                            <button className="modal-close" onClick={() => setShowSqlModal(false)}>×</button>
+                        </div>
+                        <div className="modal-body">
+                            <pre className="sql-code">{sqlCode}</pre>
+                            <button
+                                className="copy-btn"
+                                onClick={() => {
+                                    navigator.clipboard.writeText(sqlCode);
+                                    alert('Copied to clipboard!');
+                                }}
+                            >
+                                Copy to Clipboard
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
