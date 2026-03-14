@@ -12,10 +12,15 @@ import {
     AlertTriangle,
     GitBranch,
     Layers,
-    
+    Database,
+    Table,
+    ChevronRight,
+    Copy,
+    X
 } from 'lucide-react';
 import './ERDView.css';
 
+// Types (same as before, with minor additions)
 interface Dataset {
     id: string;
     name: string;
@@ -91,10 +96,10 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
     const [showSqlModal, setShowSqlModal] = useState(false);
 
     const [improvements, setImprovements] = useState<SchemaImprovement[]>([]);
-    const [showImprovements, setShowImprovements] = useState(false);
+    const [improvementsLoading, setImprovementsLoading] = useState(false);
 
     const [lineagePaths, setLineagePaths] = useState<string[][]>([]);
-    const [showLineage, setShowLineage] = useState(false);
+    const [lineageLoading, setLineageLoading] = useState(false);
 
     const [includeComposites, setIncludeComposites] = useState(true);
     const [activeTab, setActiveTab] = useState<'relationships' | 'improvements' | 'lineage'>('relationships');
@@ -105,6 +110,8 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
         setPreviewData(null);
         setSelectedRelationship(null);
         setSqlCode('');
+        setImprovements([]);
+        setLineagePaths([]);
     }, [anchorDatasetId, newDatasetId]);
 
     // ========== Core Functions ==========
@@ -176,17 +183,18 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
     };
 
     const getSuggestedImprovements = async (datasetId: string) => {
+        setImprovementsLoading(true);
+        setError('');
         try {
             const response = await invoke<any>('call_python_backend', {
                 command: 'suggest_schema_improvements',
-                payload: {
-                    dataset_id: datasetId
-                }
+                payload: { dataset_id: datasetId }
             });
             setImprovements(response.suggestions || []);
-            setShowImprovements(true);
         } catch (err: any) {
             setError(err.message || 'Failed to get suggestions');
+        } finally {
+            setImprovementsLoading(false);
         }
     };
 
@@ -195,7 +203,8 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
             setError('Please select both datasets');
             return;
         }
-
+        setLineageLoading(true);
+        setError('');
         try {
             const response = await invoke<any>('call_python_backend', {
                 command: 'find_data_lineage',
@@ -205,9 +214,10 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                 }
             });
             setLineagePaths(response.paths || []);
-            setShowLineage(true);
         } catch (err: any) {
             setError(err.message || 'Failed to find lineage');
+        } finally {
+            setLineageLoading(false);
         }
     };
 
@@ -229,12 +239,17 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
         }
     };
 
+    // ========== Render ==========
+
     return (
         <div className="erd-view">
             {/* Header */}
             <div className="erd-header">
                 <div>
-                    <h2><Link size={24} /> Entity Relationship Analyzer</h2>
+                    <h2>
+                        <Link size={24} />
+                        Entity Relationship Analyzer
+                    </h2>
                     <p>Discover relationships, preview joins, and optimize your schema</p>
                 </div>
             </div>
@@ -245,19 +260,22 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                     className={activeTab === 'relationships' ? 'active' : ''}
                     onClick={() => setActiveTab('relationships')}
                 >
-                    <Link size={16} /> Relationships
+                    <Link size={16} />
+                    Relationships
                 </button>
                 <button
                     className={activeTab === 'improvements' ? 'active' : ''}
                     onClick={() => setActiveTab('improvements')}
                 >
-                    <Lightbulb size={16} /> Improvements
+                    <Lightbulb size={16} />
+                    Improvements
                 </button>
                 <button
                     className={activeTab === 'lineage' ? 'active' : ''}
                     onClick={() => setActiveTab('lineage')}
                 >
-                    <GitBranch size={16} /> Data Lineage
+                    <GitBranch size={16} />
+                    Data Lineage
                 </button>
             </div>
 
@@ -335,19 +353,22 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                     {activeTab === 'improvements' && anchorDatasetId && (
                         <button
                             onClick={() => getSuggestedImprovements(anchorDatasetId)}
+                            disabled={improvementsLoading}
                             className="execute-btn primary"
                         >
-                            <Lightbulb size={16} /> Get Suggestions
+                            {improvementsLoading ? <Loader size={16} className="spin" /> : <Lightbulb size={16} />}
+                            {improvementsLoading ? 'Analyzing...' : 'Get Suggestions'}
                         </button>
                     )}
 
                     {activeTab === 'lineage' && (
                         <button
                             onClick={findLineage}
-                            disabled={!anchorDatasetId || !newDatasetId}
+                            disabled={lineageLoading || !anchorDatasetId || !newDatasetId}
                             className="execute-btn primary"
                         >
-                            <GitBranch size={16} /> Find Paths
+                            {lineageLoading ? <Loader size={16} className="spin" /> : <GitBranch size={16} />}
+                            {lineageLoading ? 'Finding paths...' : 'Find Paths'}
                         </button>
                     )}
                 </div>
@@ -364,7 +385,14 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
             {/* Tab Content */}
             {activeTab === 'relationships' && (
                 <div className="tab-content">
-                    {relationships.length > 0 && (
+                    {loading && (
+                        <div className="loading-center">
+                            <Loader size={32} className="spin" />
+                            <p>Analyzing datasets...</p>
+                        </div>
+                    )}
+
+                    {!loading && relationships.length > 0 && (
                         <div className="erd-results">
                             <h3>Suggested Relationships ({relationships.length})</h3>
                             <div className="relationships-list">
@@ -372,9 +400,17 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                                     <div key={idx} className="relationship-item">
                                         <div className="relationship-header">
                                             <div className="relationship-main">
-                                                <span className="anchor-col">{rel.anchor_dataset}.{rel.anchor_column}</span>
+                                                <span className="dataset-badge anchor">
+                                                    <Database size={12} />
+                                                    {rel.anchor_dataset}
+                                                </span>
+                                                <span className="column-name">{rel.anchor_column}</span>
                                                 <span className="arrow">{getCardinalityIcon(rel.metadata?.cardinality)}</span>
-                                                <span className="new-col">{rel.new_dataset}.{rel.new_column}</span>
+                                                <span className="dataset-badge new">
+                                                    <Database size={12} />
+                                                    {rel.new_dataset}
+                                                </span>
+                                                <span className="column-name">{rel.new_column}</span>
                                             </div>
 
                                             <div className="relationship-actions">
@@ -428,11 +464,18 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                         </div>
                     )}
 
-                    {relationships.length === 0 && !loading && !error && anchorDatasetId && newDatasetId && (
+                    {!loading && relationships.length === 0 && anchorDatasetId && newDatasetId && (
                         <div className="empty-state">
                             <Link size={48} strokeWidth={1.5} />
                             <p>No relationships found between these datasets</p>
                             <small>Try selecting different datasets or enable composite keys</small>
+                        </div>
+                    )}
+
+                    {!loading && !anchorDatasetId && !newDatasetId && (
+                        <div className="empty-state">
+                            <Link size={48} strokeWidth={1.5} />
+                            <p>Select two datasets to start analyzing relationships</p>
                         </div>
                     )}
                 </div>
@@ -440,7 +483,14 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
 
             {activeTab === 'improvements' && (
                 <div className="tab-content">
-                    {showImprovements && improvements.length > 0 && (
+                    {improvementsLoading && (
+                        <div className="loading-center">
+                            <Loader size={32} className="spin" />
+                            <p>Analyzing schema...</p>
+                        </div>
+                    )}
+
+                    {!improvementsLoading && improvements.length > 0 && (
                         <div className="improvements-list">
                             <h3>Schema Improvement Suggestions</h3>
                             {improvements.map((imp, idx) => (
@@ -459,10 +509,11 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                         </div>
                     )}
 
-                    {!showImprovements && (
+                    {!improvementsLoading && improvements.length === 0 && (
                         <div className="empty-state">
                             <Lightbulb size={48} strokeWidth={1.5} />
-                            <p>Select a dataset and click "Get Suggestions"</p>
+                            <p>No improvement suggestions for this dataset</p>
+                            <small>Click "Get Suggestions" to analyze</small>
                         </div>
                     )}
                 </div>
@@ -470,7 +521,14 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
 
             {activeTab === 'lineage' && (
                 <div className="tab-content">
-                    {showLineage && lineagePaths.length > 0 && (
+                    {lineageLoading && (
+                        <div className="loading-center">
+                            <Loader size={32} className="spin" />
+                            <p>Tracing data lineage...</p>
+                        </div>
+                    )}
+
+                    {!lineageLoading && lineagePaths.length > 0 && (
                         <div className="lineage-results">
                             <h3>Data Lineage Paths ({lineagePaths.length})</h3>
                             {lineagePaths.map((path, idx) => (
@@ -480,7 +538,7 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                                         <React.Fragment key={nodeIdx}>
                                             <span className="path-node">{node}</span>
                                             {nodeIdx < path.length - 1 && (
-                                                <span className="path-arrow">→</span>
+                                                <ChevronRight size={16} className="path-arrow" />
                                             )}
                                         </React.Fragment>
                                     ))}
@@ -489,7 +547,7 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                         </div>
                     )}
 
-                    {showLineage && lineagePaths.length === 0 && (
+                    {!lineageLoading && lineagePaths.length === 0 && anchorDatasetId && newDatasetId && (
                         <div className="empty-state">
                             <GitBranch size={48} strokeWidth={1.5} />
                             <p>No lineage path found between these datasets</p>
@@ -497,10 +555,10 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                         </div>
                     )}
 
-                    {!showLineage && (
+                    {!lineageLoading && (!anchorDatasetId || !newDatasetId) && (
                         <div className="empty-state">
                             <GitBranch size={48} strokeWidth={1.5} />
-                            <p>Select two datasets and click "Find Paths"</p>
+                            <p>Select two datasets to trace lineage</p>
                         </div>
                     )}
                 </div>
@@ -512,13 +570,11 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3>
-                                <Eye size={20} /> Join Preview
+                                <Eye size={20} />
+                                Join Preview: {selectedRelationship.anchor_column} → {selectedRelationship.new_column}
                             </h3>
-                            <button
-                                className="modal-close"
-                                onClick={() => setSelectedRelationship(null)}
-                            >
-                                ×
+                            <button className="modal-close" onClick={() => setSelectedRelationship(null)}>
+                                <X size={20} />
                             </button>
                         </div>
 
@@ -606,7 +662,9 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                     <div className="modal-content sql-modal" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3><Code size={20} /> Generated SQL</h3>
-                            <button className="modal-close" onClick={() => setShowSqlModal(false)}>×</button>
+                            <button className="modal-close" onClick={() => setShowSqlModal(false)}>
+                                <X size={20} />
+                            </button>
                         </div>
                         <div className="modal-body">
                             <pre className="sql-code">{sqlCode}</pre>
@@ -617,7 +675,7 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                                     alert('Copied to clipboard!');
                                 }}
                             >
-                                Copy to Clipboard
+                                <Copy size={14} /> Copy to Clipboard
                             </button>
                         </div>
                     </div>

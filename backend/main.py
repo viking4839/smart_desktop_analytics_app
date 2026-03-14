@@ -75,6 +75,7 @@ class AnalyticsBackend:
             "find_data_lineage": self.cmd_find_data_lineage,
             "generate_join_sql": self.cmd_generate_join_sql,
             "analyze_erd_relationships": self.cmd_analyze_erd_relationships,
+            "suggest_schema_improvements": self.cmd_suggest_schema_improvements,
         }
 
         for command, handler in handlers.items():
