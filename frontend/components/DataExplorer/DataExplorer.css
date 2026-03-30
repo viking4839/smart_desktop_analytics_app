@@ -1,4 +1,4 @@
-/* --- DATA TOOLBAR --- */
+/* --- DATA TOOLBAR (unchanged) --- */
 .data-toolbar {
     display: flex;
     justify-content: space-between;
@@ -68,7 +68,7 @@
     background: #1d4ed8;
 }
 
-/* --- COLUMN VISIBILITY DROPDOWN --- */
+/* --- COLUMN VISIBILITY DROPDOWN (unchanged) --- */
 .dropdown-container {
     position: relative;
 }
@@ -108,92 +108,80 @@
     margin: 4px 0;
 }
 
-/* --- GRID BASE & ALIGNMENT FIXES --- */
+/* --- CONTAINER: flex column, full height --- */
 .data-explorer-container {
-    height: 600%;
     display: flex;
     flex-direction: column;
+    height: 100%;            /* adjust as needed; parent must have a defined height */
     background: #fff;
     border-radius: 8px;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     overflow: hidden;
 }
 
-/* --- GRID: THREE-PANEL LAYOUT ---
-   Header and footer panels are fixed height with overflow:hidden (no scrollbar visible).
-   Body panel has overflow:auto and syncs its scrollLeft to the other two via JS.
-   This is the only reliable pattern when using a row virtualizer.
-------------------------------------- */
-.grid-outer {
+/* --- SINGLE SCROLL CONTAINER --- */
+.grid-scroll-container {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    /* Clip everything — children manage their own scroll */
-    min-height: 0;
-    /* Critical: lets flex children shrink below content height */
+    overflow: auto;          /* both axes scroll here */
+    min-height: 0;           /* critical for flex child to shrink */
+    position: relative;
+    cursor: grab;
 }
 
-/* Header panel: fixed, never scrolls vertically, hides horizontal scrollbar */
-.grid-header-panel {
-    flex-shrink: 0;
-    overflow: hidden;
-    /* Hides scrollbar; scrollLeft is set by JS */
-    background: #f1f3f4;
-    border-bottom: 2px solid #ccc;
+.grid-scroll-container:active {
+    cursor: grabbing;
+}
+
+/* --- TABLE LAYOUT --- */
+.excel-grid {
+    border-collapse: collapse;
+    table-layout: fixed;     /* columns respect explicit widths */
+    width: auto;             /* let width be determined by columns */
+}
+
+/* Header & Footer: sticky, block display */
+thead, tfoot {
+    display: block;
+}
+
+/* Sticky header */
+thead {
+    position: sticky;
+    top: 0;
     z-index: 10;
+    background: #f1f3f4;
 }
 
-/* Body panel: the ONLY scrolling element */
-.grid-body-panel {
-    flex: 1;
-    overflow: auto;
-    /* Both axes scroll here */
-    min-height: 0;
-}
-
-/* Footer panel: fixed, never scrolls vertically, hides horizontal scrollbar */
-.grid-footer-panel {
-    flex-shrink: 0;
-    overflow: hidden;
-    /* Hides scrollbar; scrollLeft is set by JS */
+/* Sticky footer */
+tfoot {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
     background: #f8f9fa;
     border-top: 2px solid #ccc;
-    z-index: 10;
 }
 
-.excel-grid {
-    display: table;
-    border-collapse: collapse;
-    table-layout: fixed;
-    /* Columns honour explicit width values */
-}
-
-thead,
-tfoot {
-    display: table-header-group;
-}
-
+/* tbody is the virtualised area; must be block and position relative for absolute rows */
 tbody {
-    display: table-row-group;
+    display: block;
     position: relative;
+    background: #ffffff;
 }
 
-/* Header/footer rows use the real table-row model */
-.header-row,
-.footer-row {
-    display: table-row !important;
+/* Table rows inside thead/tfoot must be block with flex to align columns */
+thead .tr,
+tfoot .tr {
+    display: flex;
+    background: inherit;
 }
 
-/* Body rows are virtualised — they use absolute positioning inside a flex row */
+/* Body rows: absolutely positioned inside tbody */
 tbody .tr {
     display: flex;
     position: absolute;
     top: 0;
     left: 0;
-}
-
-.tr {
+    width: 100%;
     background: #ffffff;
 }
 
@@ -201,22 +189,8 @@ tbody .tr {
     background: #f8f9fa;
 }
 
-/* Header/footer cells sit inside real table-rows */
-.th,
-tfoot .td {
-    display: table-cell;
-    box-sizing: border-box;
-    padding: 8px;
-    border-right: 1px solid #e5e7eb;
-    border-bottom: 1px solid #e5e7eb;
-    font-size: 13px;
-    vertical-align: top;
-}
-
-/* Body cells sit inside virtualised flex rows */
-tbody .td {
-    display: block;
-    flex: 0 0 auto;
+/* --- CELLS --- */
+.th, .td {
     box-sizing: border-box;
     padding: 8px;
     border-right: 1px solid #e5e7eb;
@@ -227,17 +201,34 @@ tbody .td {
     text-overflow: ellipsis;
 }
 
+/* Header cells */
 .th {
     background: #f1f3f4;
     font-weight: 600;
     text-align: left;
-    /* No overflow:hidden — quality bar, filters, dropdowns must not be clipped */
-    overflow: visible;
-    white-space: normal;
+    overflow: visible;       /* allow quality bar & filters to be visible */
+    white-space: normal;    /* allow text wrapping if needed */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
+/* Body cells (td) in virtual rows */
+tbody .td {
+    display: block;
+    flex: 0 0 auto;
+}
 
-/* --- ICONS & INTERNAL CELL STYLES --- */
+/* Footer cells */
+tfoot .td {
+    background: #f8f9fa;
+    font-weight: normal;
+    text-align: left;
+    display: block;
+    flex: 0 0 auto;
+}
+
+/* --- ICONS & INTERNAL CELL STYLES (unchanged) --- */
 .type-icon {
     color: #9ca3af;
     margin-right: 6px;
@@ -373,11 +364,6 @@ tbody .td {
 }
 
 /* --- QUICK AGGREGATIONS (FOOTER) --- */
-.footer-cell {
-    background: #f8f9fa;
-    border-top: 2px solid #ccc;
-}
-
 .footer-agg {
     display: flex;
     flex-direction: column;
@@ -423,25 +409,22 @@ tbody .td {
     }
 }
 
-/* --- DRAG-TO-SCROLL --- */
-
-/* Kill text selection while dragging — works across all browsers */
-.grid-body-panel.is-dragging,
-.grid-body-panel.is-dragging * {
+/* --- DRAG-TO-SCROLL (updated for new container) --- */
+.grid-scroll-container.is-dragging,
+.grid-scroll-container.is-dragging * {
     user-select: none;
     -webkit-user-select: none;
 }
 
 /* Restore pointer cursor on cells that contain interactive elements */
-.grid-body-panel input,
-.grid-body-panel button,
-.grid-body-panel label,
-.grid-body-panel select {
+.grid-scroll-container input,
+.grid-scroll-container button,
+.grid-scroll-container label,
+.grid-scroll-container select {
     cursor: default;
 }
 
 /* Restore text cursor inside filter inputs in the header */
-.grid-header-panel input {
+.grid-scroll-container input {
     cursor: text;
 }
-

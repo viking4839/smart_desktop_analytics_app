@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { open } from '@tauri-apps/api/dialog';
 import {
@@ -28,39 +28,18 @@ import {
     Loader,
     Plus,
     X,
-    ChevronLeft,
-    ChevronRight,
     AlertCircle,
-    CheckCircle,
-    Filter,
-    Download,
-    Info,
-    Hash,
-    Calendar,
-    Type,
-    ToggleLeft,
-    MoreHorizontal,
-    ChevronDown,
-    ChevronUp,
-    Eye,
-    EyeOff,
     Trash2,
-    Save,
-    Home,
-    Settings,
     Activity,
-    FileText,
-    FolderOpen,
-    Clock,
-    Check,
-    AlertTriangle
+    Settings,
+    Check
 } from 'lucide-react';
 
 // ----- NEW: Client‑Side DataExplorer -----
 import { DataExplorer } from '../components/DataExplorer/DataExplorer';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard/AnalyticsDashboard';
 import { AiAssistantWidget } from '../components/common/Apiconnector';
-import  ERDView  from '../components/ERD/ERDView';
+import ERDView from '../components/ERD/ERDView';
 import './App.css';
 
 // ----- All existing TypeScript interfaces (unchanged) -----
@@ -162,8 +141,9 @@ function App() {
     const [quickInsights, setQuickInsights] = useState<string[]>([]);
     const [qualityScore, setQualityScore] = useState<QualityScore | null>(null);
     const [showSuggestions, setShowSuggestions] = useState(false);
-    const [activeRightTab, setActiveRightTab] = useState<'results' | 'dataExplorer'>('results');
-    const [activeTab, setActiveTab] = useState<'data' | 'visualize'>('data');
+    const [activeRightTab, setActiveRightTab] = useState<'results' | 'dataExplorer' | 'analytics' | 'erd'>('results');
+    const [columnSearchTerm, setColumnSearchTerm] = useState('');
+    const [isAssistantOpen, setIsAssistantOpen] = useState(false);
 
     // ----- Initialisation -----
     useEffect(() => {
@@ -232,7 +212,7 @@ function App() {
 
 
             if (selectedDataset === id) {
-                setSelectedDataset(null);
+                setSelectedDataset('');
             }
 
             // Refresh the sidebar list
@@ -252,7 +232,7 @@ function App() {
             });
 
             const columns = Object.values(response.schema || {});
-            setAvailableColumns(columns);
+            setAvailableColumns(columns as any);
             setSuggestedQueries(response.suggested_queries || []);
             setQuickInsights(response.quick_insights || []);
             setQualityScore(response.quality_score || null);
@@ -523,7 +503,7 @@ function App() {
                                 outerRadius={100}
                                 label
                             >
-                                {chartData.data.map((entry, index) => (
+                                {chartData.data.map((_, index) => (
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                             </Pie>
@@ -559,138 +539,133 @@ function App() {
     return (
         <div className="app-container">
             {/* Header */}
-            <header className="app-header">
-                <h1>Smart Desktop Analytics</h1>
-                <div className="status-indicator">
-                    <div className={`status-dot ${backendStatus}`} />
-                    <span>Backend: {backendStatus}</span>
-                    <button onClick={checkBackend} className="refresh-btn">
-                        <RefreshCw size={16} />
-                        Refresh
+{/* ========== MODERN HEADER ========== */}
+            <header className="modern-header">
+                <div className="header-left">
+                    <div className="brand-logo">
+                        <Database size={25} color="#cdcbf1" />
+                    </div>
+                    <h1>Smart Desktop Analytics</h1>
+                    
+                </div>
+                <div className="header-right">
+                    <div className="status-badge">
+                        <div className={`status-dot ${result ? 'active' : 'idle'}`}></div>
+                        <span>Backend Connected</span>
+                    </div>
+                    <button className="icon-action-btn" title="Settings">
+                        <Settings size={18} />
                     </button>
                 </div>
             </header>
 
             <div className="app-main">
-                {/* ========== LEFT PANEL – Datasets & Columns ========== */}
-                <div className="left-panel">
-                    <div className="panel-section">
-                        <h2>Datasets</h2>
-                        <button
-                            onClick={handleFileUpload}
-                            disabled={loading}
-                            className="upload-btn"
-                        >
-                            {loading ? <Loader size={16} className="spin" /> : <Upload size={16} />}
-                            {loading ? 'Uploading...' : 'Upload File'}
-                        </button>
-
-                        {/* Quality Score */}
-                        {qualityScore && selectedDataset && (
-                            <div className="quality-card">
-                                <h3>Data Quality</h3>
-                                <div className="quality-bar">
-                                    <div
-                                        className="quality-fill"
-                                        style={{
-                                            width: `${qualityScore.score}%`,
-                                            background: qualityScore.score > 80 ? '#10b981' : qualityScore.score > 50 ? '#f59e0b' : '#ef4444'
-                                        }}
-                                    >
-                                        {qualityScore.score}%
-                                    </div>
-                                </div>
-                                <div className="quality-details">
-                                    <span>Completeness: {qualityScore.completeness}%</span>
-                                    <span>Missing: {qualityScore.null_percentage}%</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Dataset List */}
-                        <div className="dataset-list">
-                            {datasets.length === 0 ? (
-                                <div className="empty-state">
-                                    <Database size={48} strokeWidth={1.5} />
-                                    <p>No datasets yet. Upload one to get started!</p>
-                                </div>
-                            ) : (
-                                datasets.map(dataset => (
-                                    <div
-                                        key={dataset.id}
-                                        className={`dataset-item ${selectedDataset === dataset.id ? 'selected' : ''}`}
-                                        onClick={() => setSelectedDataset(dataset.id)}
-                                    >
-                                        {/* Wrap the text so it stays grouped on the left */}
-                                        <div className="dataset-details">
-                                            <div className="dataset-name">
-                                                <File size={16} style={{ marginRight: 8 }} />
-                                                {dataset.name}
-                                            </div>
-                                            <div className="dataset-meta">
-                                                {dataset.row_count} rows × {dataset.column_count} cols
-                                            </div>
-                                            <div className="dataset-format">
-                                                {dataset.source_format}
-                                            </div>
-                                        </div>
-
-                                        {/* The button sits on the right */}
-                                        <button
-                                            className="delete-dataset-btn"
-                                            onClick={(e) => handleDeleteDataset(e, dataset.id)}
-                                            title="Delete Dataset"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                ))
-                            )}
+                {/* ========== LEFT PANEL – Dark Theme Data Sources ========== */}
+                <div className="left-panel dark-theme">
+                    {/* Data Management Header */}
+                    <div className="data-management-header">
+                        <div className="header-title">
+                            <Database size={20} />
+                            <h2>Data Sources</h2>
                         </div>
+                        <button
+                            className="refresh-btn-dark"
+                            onClick={loadDatasets}
+                            title="Refresh dataset list"
+                        >
+                            <RefreshCw size={16} />
+                        </button>
                     </div>
 
-                    {/* Columns Panel */}
-                    {selectedDataset && availableColumns.length > 0 && (
-                        <div className="panel-section">
-                            <h2>Columns</h2>
-                            <div className="column-list">
-                                {availableColumns.map(column => (
-                                    <div key={column.name} className="column-item">
-                                        <div className="column-header">
-                                            <span className="column-name">{column.name}</span>
-                                            <span className={`column-type ${column.data_type || column.dtype}`}>
-                                                {column.data_type || column.dtype}
-                                            </span>
-                                        </div>
+                    {/* Upload Button */}
+                    <button
+                        className="upload-btn primary"
+                        onClick={handleFileUpload}
+                        disabled={loading}
+                    >
+                        {loading ? <Loader size={16} className="spin" /> : <Upload size={16} />}
+                        {loading ? 'Uploading...' : 'Upload Dataset'}
+                    </button>
 
-                                        {column.statistics?.numeric_stats && (
-                                            <div className="column-stats">
-                                                <span>Range: {column.statistics.numeric_stats.min.toFixed(0)} - {column.statistics.numeric_stats.max.toFixed(0)}</span>
-                                                <span>Median: {column.statistics.numeric_stats.median.toFixed(0)}</span>
-                                            </div>
-                                        )}
-
-                                        <div className="column-stats">
-                                            <span>Unique: {column.unique_values}</span>
-                                            <span>Nulls: {column.nullable ? 'Yes' : 'No'}</span>
-                                        </div>
-
-                                        <button
-                                            onClick={() => toggleGroupBy(column.name)}
-                                            className={`group-by-btn ${groupBy.includes(column.name) ? 'active' : ''}`}
-                                        >
-                                            {groupBy.includes(column.name) ? 'Grouped' : 'Group By'}
-                                        </button>
-                                    </div>
-                                ))}
+                    {/* Data Quality Card */}
+                    {qualityScore && selectedDataset && (
+                        <div className="quality-card dark">
+                            <h3>Data Quality</h3>
+                            <div className="quality-bar">
+                                <div
+                                    className="quality-fill"
+                                    style={{
+                                        width: `${qualityScore.score}%`,
+                                        background: qualityScore.score > 80 ? '#10b981' : qualityScore.score > 50 ? '#f59e0b' : '#ef4444',
+                                    }}
+                                >
+                                    {qualityScore.score}%
+                                </div>
+                            </div>
+                            <div className="quality-details">
+                                <span>Completeness: {qualityScore.completeness}%</span>
+                                <span>Missing: {qualityScore.null_percentage}%</span>
                             </div>
                         </div>
                     )}
+
+                    {/* Dataset List */}
+                    <div className="dataset-list">
+                        {datasets.length === 0 ? (
+                            <div className="empty-statee">
+                                <Database size={48} strokeWidth={1.5} />
+                                <p>No datasets yet. Upload one to get started!</p>
+                            </div>
+                        ) : (
+                            datasets.map(dataset => (
+                                <div
+                                    key={dataset.id}
+                                    className={`dataset-item ${selectedDataset === dataset.id ? 'selected' : ''}`}
+                                    onClick={() => setSelectedDataset(dataset.id)}
+                                >
+                                    <div className="dataset-details">
+                                        <div className="dataset-name">
+                                            <File size={16} style={{ marginRight: 8 }} />
+                                            <span className="truncate">{dataset.name}</span>
+                                        </div>
+                                        <div className="dataset-meta">
+                                            {(dataset.row_count ?? 0).toLocaleString()} rows × {dataset.column_count ?? 0} cols
+                                        </div>
+                                        <div className="dataset-format badge">{(dataset.source_format ?? 'file').toUpperCase()}</div>
+                                    </div>
+                                    <button
+                                        className="delete-dataset-btn"
+                                        onClick={(e) => handleDeleteDataset(e, dataset.id)}
+                                        title="Delete Dataset"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Assistant Footer Widget */}
+                    <div
+                        className={`assistant-footer ${isAssistantOpen ? 'active' : ''}`}
+                        onClick={() => setIsAssistantOpen(!isAssistantOpen)}
+                    >
+                        <div className="assistant-header">
+                            <div className="icon-glow">
+                                <Activity size={18} />
+                            </div>
+                            <span>Smart Assistant Active</span>
+                        </div>
+                        <p className="assistant-message">
+                            Select a dataset to unlock AI insights, schema mapping, and automated query suggestions.
+                        </p>
+                    </div>
                 </div>
 
-                {/* ========== MIDDLE PANEL – Query Builder ========== */}
-                <div className="middle-panel">
-                    <div className="panel-section">
+                {/* ========== MIDDLE PANEL – Config + Results Canvas ========== */}
+                <div className="middle-panel modern">
+                    {/* Left Config Column */}
+                    <div className="config-column">
                         <h2>Query Builder</h2>
 
                         {/* Quick Insights */}
@@ -715,7 +690,6 @@ function App() {
                                         {showSuggestions ? 'Hide' : 'Show'}
                                     </button>
                                 </div>
-
                                 {showSuggestions && (
                                     <div className="suggestions-list">
                                         {suggestedQueries.slice(0, 5).map((sq) => (
@@ -735,10 +709,65 @@ function App() {
                             </div>
                         )}
 
+                        {/* Available Columns Section */}
+                        {selectedDataset && availableColumns.length > 0 && (
+                            <div className="available-columns-section">
+                                <div className="section-header">
+                                    <Database size={18} />
+                                    <span>Available Columns</span>
+                                </div>
+                                <div className="search-bar">
+                                    <input
+                                        type="text"
+                                        placeholder="Search columns..."
+                                        value={columnSearchTerm}
+                                        onChange={(e) => setColumnSearchTerm(e.target.value)}
+                                        className="search-input"
+                                    />
+                                </div>
+                                <div className="columns-grid">
+                                    {availableColumns
+                                        .filter(col => col.name.toLowerCase().includes(columnSearchTerm.toLowerCase()))
+                                        .map(column => (
+                                            <div key={column.name} className="column-card">
+                                                <div className="column-header">
+                                                    <span className="column-name">{column.name}</span>
+                                                    <span className={`data-type-badge ${column.data_type || column.dtype}`}>
+                                                        {column.data_type || column.dtype}
+                                                    </span>
+                                                </div>
+                                                <div className="column-stats">
+                                                    <span>Unique: {column.unique_values}</span>
+                                                    <span>Nulls: {column.nullable ? 'Yes' : 'No'}</span>
+                                                </div>
+                                                {column.statistics?.numeric_stats && (
+                                                    <div className="numeric-preview">
+                                                        Min: {column.statistics.numeric_stats.min.toFixed(1)} &nbsp;
+                                                        Max: {column.statistics.numeric_stats.max.toFixed(1)} &nbsp;
+                                                        Median: {column.statistics.numeric_stats.median.toFixed(1)}
+                                                    </div>
+                                                )}
+                                                <button
+                                                    className={`group-action-btn ${groupBy.includes(column.name) ? 'active' : ''}`}
+                                                    onClick={() => toggleGroupBy(column.name)}
+                                                >
+                                                    {groupBy.includes(column.name) ? '✓ Grouped' : 'Group By'}
+                                                </button>
+                                            </div>
+                                        ))}
+                                </div>
+                                {groupBy.length > 0 && (
+                                    <div className="selected-summary">
+                                        {groupBy.length} column{groupBy.length !== 1 ? 's' : ''} selected for grouping
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Metrics Section */}
                         {selectedDataset ? (
                             <>
-                                {/* Metrics */}
-                                <div className="query-section">
+                                <div className="metrics-section">
                                     <h3>Metrics</h3>
                                     {metrics.map((metric, index) => (
                                         <div key={index} className="metric-row">
@@ -755,11 +784,11 @@ function App() {
                                     </button>
                                 </div>
 
-                                {/* Group By */}
-                                <div className="query-section">
-                                    <h3>Group By</h3>
+                                {/* Selected Groups Tags */}
+                                <div className="selected-groups-section">
+                                    <h3>Selected Groups</h3>
                                     {groupBy.length > 0 ? (
-                                        <div className="group-by-tags">
+                                        <div className="group-tags">
                                             {groupBy.map(col => (
                                                 <span key={col} className="group-tag">
                                                     {col}
@@ -768,12 +797,12 @@ function App() {
                                             ))}
                                         </div>
                                     ) : (
-                                        <p className="hint">Select columns from the left panel to group by</p>
+                                        <p className="hint">Click "Group By" on any column above</p>
                                     )}
                                 </div>
 
-                                {/* Chart Visualization */}
-                                <div className="query-section">
+                                {/* Chart Visualization Section */}
+                                <div className="chart-section">
                                     <h3>Chart Visualization</h3>
                                     <div className="chart-controls">
                                         <select
@@ -798,7 +827,6 @@ function App() {
                                                     />
                                                     Force chart type (override auto-detection)
                                                 </label>
-
                                                 {forceChartType && chartType === 'pie' && (
                                                     <p className="hint">Pie charts work best with fewer than 10 categories</p>
                                                 )}
@@ -825,7 +853,6 @@ function App() {
                                                             ))}
                                                     </select>
                                                 </div>
-
                                                 {chartType !== 'pie' && (
                                                     <div className="axis-row">
                                                         <label>Y-Axis:</label>
@@ -841,7 +868,6 @@ function App() {
                                                         </select>
                                                     </div>
                                                 )}
-
                                                 <button
                                                     className="preview-chart-btn"
                                                     onClick={previewChart}
@@ -854,10 +880,11 @@ function App() {
                                     </div>
                                 </div>
 
+                                {/* Run Query Button */}
                                 <button
                                     onClick={executeQuery}
                                     disabled={loading || !selectedDataset}
-                                    className="execute-btn"
+                                    className="run-query-btn"
                                 >
                                     {loading ? <Loader size={16} className="spin" /> : <BarChart2 size={16} />}
                                     {loading ? 'Running...' : 'Run Query'}
@@ -877,6 +904,9 @@ function App() {
                             </div>
                         )}
                     </div>
+
+                    {/* Right Results Canvas */}
+
                 </div>
 
                 {/* ========== RIGHT PANEL – Results / Data Explorer ========== */}
@@ -1039,7 +1069,6 @@ function App() {
                                 {selectedDataset ? (
                                     <DataExplorer
                                         datasetId={selectedDataset}
-                                        onLoadComplete={() => console.log('Dataset loaded')}
                                     />
                                 ) : (
                                     <div className="empty-state">
@@ -1077,20 +1106,28 @@ function App() {
             </div>
 
             {/* Footer */}
-            <footer className="app-footer">
-                <div className="footer-stats">
-                    {datasets.length > 0 && (
-                        <span>{datasets.length} dataset{datasets.length !== 1 ? 's' : ''} loaded</span>
-                    )}
+{/* ========== MODERN FOOTER ========== */}
+            <footer className="modern-footer">
+                <div className="footer-left">
+                    <div className="footer-stat">
+                        <Database size={14} />
+                        <span>{datasets.length} Datasets Loaded</span>
+                    </div>
                     {selectedDataset && (
-                        <span>Selected: {getSelectedDatasetName()}</span>
-                    )}
-                    {result && result.provenance && (
-                        <span>Query: {result.provenance.execution_time.toFixed(3)}s</span>
+                        <div className="footer-stat active-context">
+                            <File size={14} />
+                            <span>Context: {getSelectedDatasetName()}</span>
+                        </div>
                     )}
                 </div>
-                <div className="footer-info">
-                    Smart Desktop Analytics v1.0.0
+                <div className="footer-right">
+                    {result && result.provenance && (
+                        <div className="footer-stat success-text">
+                            <Check size={14} />
+                            <span>Query: {result.provenance.execution_time.toFixed(3)}s</span>
+                        </div>
+                    )}
+                    <span className="version-text">v1.0.0</span>
                 </div>
             </footer>
             <AiAssistantWidget
@@ -1101,6 +1138,8 @@ function App() {
                 quickInsights={quickInsights}
                 suggestedQueries={suggestedQueries}
                 qualityScore={qualityScore}
+                isOpen={isAssistantOpen}                  // <--- Add this
+                onClose={() => setIsAssistantOpen(false)}
 
             />
         </div>

@@ -317,8 +317,7 @@ fn main() {
         }
         Err(e) => {
             println!("⚠️  Failed to connect to Python backend: {}", e);
-            println!("❌ Cannot start without backend. Make sure Python dependencies are installed:");
-            println!("   cd backend && pip install pandas numpy openpyxl sqlalchemy aiosqlite");
+      
             None
         }
     };

@@ -247,7 +247,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ datasetI
                                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                                     <XAxis dataKey="x" type="number" name={xCol} tick={{ fontSize: 12 }} domain={['auto', 'auto']} />
                                     <YAxis dataKey="y" type="number" name={yCol} tick={{ fontSize: 12 }} domain={['auto', 'auto']} />
-                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: number) => value.toLocaleString()} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any) => Number(value).toLocaleString()} />
 
                                     {/* The Raw Data Points */}
                                     <Scatter name="Data" dataKey="y" fill="#8884d8" opacity={0.6} />

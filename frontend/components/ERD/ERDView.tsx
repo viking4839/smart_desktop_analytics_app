@@ -13,12 +13,13 @@ import {
     GitBranch,
     Layers,
     Database,
-    Table,
     ChevronRight,
     Copy,
-    X
+    X,
+    Network
 } from 'lucide-react';
 import './ERDView.css';
+import { ERDCanvas } from './ERDCanvas';
 
 // Types (same as before, with minor additions)
 interface Dataset {
@@ -26,6 +27,7 @@ interface Dataset {
     name: string;
     row_count: number;
     column_count: number;
+    columns?: { name: string; type: string }[];
 }
 
 interface Relationship {
@@ -80,7 +82,7 @@ interface Props {
 const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
     // Selection state
     const [anchorDatasetId, setAnchorDatasetId] = useState<string>(selectedDatasetId || '');
-    const [newDatasetId, setNewDatasetId] = useState<string>('');
+    const [newDatasetId, setNewDatasetId] = useState<string[]>([]);
 
     // Results state
     const [relationships, setRelationships] = useState<Relationship[]>([]);
@@ -102,9 +104,44 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
     const [lineageLoading, setLineageLoading] = useState(false);
 
     const [includeComposites, setIncludeComposites] = useState(true);
-    const [activeTab, setActiveTab] = useState<'relationships' | 'improvements' | 'lineage'>('relationships');
+    const [activeTab, setActiveTab] = useState<'visualizer' | 'relationships' | 'improvements' | 'lineage'>('visualizer');
 
-    // Clear results when selection changes
+    const [enrichedDatasets, setEnrichedDatasets] = useState<Dataset[]>(datasets);
+
+
+    useEffect(() => {
+        const fetchAllColumns = async () => {
+            const updatedDatasets = await Promise.all(datasets.map(async (ds) => {
+                try {
+
+                    const response = await invoke<any>('call_python_backend', {
+                        command: 'get_schema', // <--- CHANGE THIS to your actual Python command name
+                        payload: { dataset_id: ds.id }
+                    });
+
+                    // Map the Python response into the {name, type} format React Flow expects
+                    const fetchedColumns = response.columns ? response.columns.map((c: any) => ({
+                        // Handle both string arrays ["id", "name"] and object arrays [{name: "id", type: "int"}]
+                        name: typeof c === 'string' ? c : c.name,
+                        type: c.type || 'varchar'
+                    })) : [];
+
+                    // Return the dataset with the new columns attached!
+                    return { ...ds, columns: fetchedColumns };
+                } catch (err) {
+                    console.error(`Failed to fetch columns for dataset ${ds.name}:`, err);
+                    return ds; // Fallback to the original if it fails
+                }
+            }));
+
+            setEnrichedDatasets(updatedDatasets);
+        };
+
+        if (datasets.length > 0) {
+            fetchAllColumns();
+        }
+    }, [datasets]);
+
     useEffect(() => {
         setRelationships([]);
         setPreviewData(null);
@@ -117,8 +154,9 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
     // ========== Core Functions ==========
 
     const findRelationships = async () => {
-        if (!anchorDatasetId || !newDatasetId) {
-            setError('Please select both anchor and new dataset');
+        // 1. Check if the array is empty instead of checking a single string
+        if (!anchorDatasetId || newDatasetId.length === 0) {
+            setError('Please select an anchor dataset and at least one dataset to compare');
             return;
         }
 
@@ -126,15 +164,28 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
         setError('');
 
         try {
-            const response = await invoke<any>('call_python_backend', {
-                command: 'analyze_erd_relationships',
-                payload: {
-                    anchor_dataset_id: anchorDatasetId,
-                    new_dataset_id: newDatasetId,
-                    include_composites: includeComposites
+            let allFoundRelationships: Relationship[] = [];
+
+            // 2. Loop through every selected dataset ID
+            for (const targetId of newDatasetId) {
+                const response = await invoke<any>('call_python_backend', {
+                    command: 'analyze_erd_relationships',
+                    payload: {
+                        anchor_dataset_id: anchorDatasetId,
+                        new_dataset_id: targetId, // <--- Send ONE string ID at a time
+                        include_composites: includeComposites
+                    }
+                });
+
+                // 3. Merge the new relationships into our master list
+                if (response.relationships) {
+                    allFoundRelationships = [...allFoundRelationships, ...response.relationships];
                 }
-            });
-            setRelationships(response.relationships || []);
+            }
+
+            // 4. Update the UI with the combined results
+            setRelationships(allFoundRelationships);
+
         } catch (err: any) {
             setError(err.message || 'Failed to analyze relationships');
         } finally {
@@ -277,6 +328,13 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                     <GitBranch size={16} />
                     Data Lineage
                 </button>
+                <button
+                    className={activeTab === 'visualizer' ? 'active' : ''}
+                    onClick={() => setActiveTab('visualizer')}
+                >
+                    <Network size={16} />
+                    Visual ERD
+                </button>
             </div>
 
             {/* Controls */}
@@ -299,22 +357,59 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                     </div>
 
                     <div className="control-group">
-                        <label>Dataset to compare (FK side):</label>
-                        <select
-                            value={newDatasetId}
-                            onChange={(e) => setNewDatasetId(e.target.value)}
-                            className="column-select"
-                        >
-                            <option value="">Select dataset</option>
+                        <label>Datasets to compare (FK side):</label>
+
+                        {/* Scrollable Checkbox Container */}
+                        <div style={{
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '6px',
+                            padding: '10px',
+                            maxHeight: '160px',
+                            overflowY: 'auto',
+                            background: 'white',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px'
+                        }}>
                             {datasets
                                 .filter(d => d.id !== anchorDatasetId)
                                 .map(d => (
-                                    <option key={d.id} value={d.id}>
-                                        {d.name} ({d.row_count.toLocaleString()} rows)
-                                    </option>
+                                    <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={newDatasetId.includes(d.id)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    // Add the ID to the array
+                                                    setNewDatasetId([...newDatasetId, d.id]);
+                                                } else {
+                                                    // Remove the ID from the array
+                                                    setNewDatasetId(newDatasetId.filter(id => id !== d.id));
+                                                }
+                                            }}
+                                            style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#4f46e5' }}
+                                        />
+                                        <span style={{ fontSize: '14px', color: '#334155', fontWeight: 500 }}>
+                                            {d.name}
+                                            <span style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 400, marginLeft: '6px' }}>
+                                                ({d.row_count.toLocaleString()} rows)
+                                            </span>
+                                        </span>
+                                    </label>
                                 ))
                             }
-                        </select>
+                            {/* Fallback if no other datasets exist */}
+                            {datasets.filter(d => d.id !== anchorDatasetId).length === 0 && (
+                                <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center' }}>
+                                    Upload more datasets to compare.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Selection Counter */}
+                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', fontWeight: 500 }}>
+                            {newDatasetId.length} dataset(s) selected
+                        </div>
                     </div>
                 </div>
 
@@ -561,6 +656,22 @@ const ERDView: React.FC<Props> = ({ datasets, selectedDatasetId }) => {
                             <p>Select two datasets to trace lineage</p>
                         </div>
                     )}
+                </div>
+            )}
+
+            {activeTab === 'visualizer' && (
+                <div className="tab-content">
+
+                    <div style={{ marginBottom: '16px' }}>
+                        <h3>Interactive Schema Visualization</h3>
+                        <p style={{ color: '#64748b', fontSize: '13px' }}>
+                            Drag tables to organize them. Lines indicate relationships found by the backend.
+                            Use the controls to zoom and pan.
+                        </p>
+                    </div>
+
+                    {/* Render the React Flow Canvas! */}
+                    <ERDCanvas datasets={datasets} relationships={relationships} />
                 </div>
             )}
 

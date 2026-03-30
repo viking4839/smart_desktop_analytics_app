@@ -58,6 +58,8 @@ export interface AiAssistantWidgetProps {
     quickInsights?: string[];
     suggestedQueries?: any[];
     qualityScore?: QualityScore | null;
+    isOpen?: boolean;
+    onClose?: () => void;
 }
 
 interface ChatMessage {
